@@ -1,0 +1,61 @@
+# proxy: configuration pertinent to the proxy itself
+proxy:
+  # listen: The address:port on which the proxy listens for ollama/open ai API requests
+  #         You can point any chat app top http://<thisip><listen> (http://192.168.1.17:9080) to send api commands
+  listen: ":9080"
+  # The version of ollama to report as
+  version: "0.33.0"
+
+# mesh: This is the configuration for the p2p MESH we're joining or running
+mesh:
+  # name: a unique name (only used for display purposes) or leave it blank for <hostname>
+  name: ""
+  #  Mesh Authentication/Relay/Discovery Configs
+  #   Applies to: mesh admin|mesh hybrid
+  admin_address: "http://example.com:4002"
+  #  admin_secret  - is the admin controller password
+  #      Applies to: mesh admin| mesh hybrid )
+  admin_secret: "<fill me in>"
+  #  admin_port: the port numbner to use for
+  #      Applies to: mesh admin| mesh hybrid )
+  admin_port: 4002
+  # relay_port: the libp2p relay address port to use when running as admin|hybrid this port must be open or port forwarded
+  # to the internet if running admin
+  #      Applies to: mesh admin| mesh hybrid )
+  relay_port: 4001
+  # public_address: Public IP address selector, in most cases you can use "auto" ( or specify your routers address if using port_forwarding )
+  #      Applies to: mesh admin| mesh hybrid
+  #
+  public_address: "auto"
+
+  # app_port bind the proxy p2p mesh network to a specific port. 0 is pick any available (should generally be left as 0)
+  #   Applies to: mesh proxy| mesh hybrid
+  #
+  app_port: 0
+  # force_private: forces the node to think it is absolutely behind NAT, this can often speed up discovery of peers
+  force_private: false
+  # mdns_enabled: enables mdsn discovery.  Nodes behind the same NAT typically cannot talk to each other via the libp2p
+  # as they can't hairpin the nat.  If running with multiple proxies behind the same NAT we can use MDNS to for direct connections
+  mdns_enabled: true
+
+# providers: contains a list of ollama (for now) nodes that this proxy will share into the mesh
+#  You can have as many in here as you want, a single proxy can front multiple ollama instances ( if you have a few sparks or gpus around ;))
+#  You can also leave this empty if this node is just meant to use other mesh nodes models
+providers:
+  # id: logical id of this instance (display only) must be unique
+  - id: ollama-10
+    # type: always ollama for now
+    type: ollama
+    # base_url: the base url of your ollama instance
+    #  typically if running on the same node as ollama its http://127.0.0.1:11434 , but can be any ollam instance that allows
+    #  remote network access ( See ollama config option OLLAMA_HOST=0.0.0.0:11434 )
+    base_url: "http://127.0.0.1:11434"
+    # model_discovery: Note currenly only pinned works
+    #     pinned - only export models that are currently loaded on the ollam instance (ie do not load a model, prevents model load thrashing)
+    #                ( See ollama config option OLLAMA_KEEP_ALIVE=-1 )
+    #        all - not supported (in the future it will report all models ollama has downloaded)
+    #  whitelist - not supported (in the future only report the models listed under models:
+    model_discovery: pinned
+    # models: contains a white list ot models to export (not supported yet )
+    models:
+

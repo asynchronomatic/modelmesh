@@ -1,0 +1,1017 @@
+(() => {
+  const POLL_MS = 5000;
+
+  const state = {
+    view: "mesh",
+    members: [],
+    models: [],
+    filter: "",
+    nodesFilter: "",
+    error: null,
+    meshSize: { w: 0, h: 0 },
+    selectedPeer: null,
+    expandedPeer: null,
+    expandedModel: null,
+    chat: {
+      model: "",
+      messages: [],
+      busy: false,
+      abort: null,
+    },
+  };
+
+  const el = {
+    status: document.getElementById("conn-status"),
+    statusLabel: document.getElementById("conn-status-label"),
+    meshCount: document.getElementById("mesh-count"),
+    nodesCount: document.getElementById("nodes-count"),
+    modelsCount: document.getElementById("models-count"),
+    meshSubtitle: document.getElementById("mesh-subtitle"),
+    meshCanvas: document.getElementById("mesh-canvas"),
+    meshGraph: document.getElementById("mesh-graph"),
+    nodeDetail: document.getElementById("node-detail"),
+    nodesBody: document.getElementById("nodes-body"),
+    nodesSearch: document.getElementById("nodes-search"),
+    modelsBody: document.getElementById("models-body"),
+    search: document.getElementById("models-search"),
+    chatModel: document.getElementById("chat-model"),
+    chatThread: document.getElementById("chat-thread"),
+    chatForm: document.getElementById("chat-form"),
+    chatInput: document.getElementById("chat-input"),
+    chatSend: document.getElementById("chat-send"),
+    btnNewChat: document.getElementById("btn-new-chat"),
+    chatPrivacy: document.getElementById("chat-privacy"),
+    settingsYaml: document.getElementById("settings-yaml"),
+    settingsSubtitle: document.getElementById("settings-subtitle"),
+  };
+
+  function setStatus(kind, label) {
+    el.status.classList.remove("online", "offline", "loading");
+    el.status.classList.add(kind);
+    el.statusLabel.textContent = label;
+  }
+
+  async function getJSON(path) {
+    const res = await fetch(path, { headers: { Accept: "application/json" } });
+    if (!res.ok) {
+      throw new Error(`${path}: ${res.status} ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  function escapeHTML(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function shortID(id) {
+    if (!id) return "";
+    if (id.length <= 14) return id;
+    return id.slice(0, 6) + "…" + id.slice(-4);
+  }
+
+  function formatBytes(n) {
+    const v = Number(n) || 0;
+    if (v <= 0) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let i = 0;
+    let x = v;
+    while (x >= 1024 && i < units.length - 1) {
+      x /= 1024;
+      i++;
+    }
+    const digits = x >= 10 || i === 0 ? 0 : 1;
+    return `${x.toFixed(digits)} ${units[i]}`;
+  }
+
+  function memberName(m) {
+    return m.Name || shortID(m.PeerID);
+  }
+
+  function sortedMembers() {
+    return [...state.members].sort((a, b) => {
+      if ((a.Type === "self") !== (b.Type === "self")) return a.Type === "self" ? -1 : 1;
+      return memberName(a).localeCompare(memberName(b));
+    });
+  }
+
+  function kindRank(kind) {
+    if (kind === "direct") return 3;
+    if (kind === "relay/unlimited") return 2;
+    if (kind && kind.startsWith("relay")) return 1;
+    if (kind === "limited") return 1;
+    return 0;
+  }
+
+  function buildEdges(members) {
+    const ids = new Set(members.map((m) => m.PeerID));
+    const edges = new Map();
+    for (const m of members) {
+      const conns = (m.Mesh && m.Mesh.Connections) || [];
+      for (const c of conns) {
+        if (!c.PeerID || c.PeerID === m.PeerID || !ids.has(c.PeerID)) continue;
+        const key = [m.PeerID, c.PeerID].sort().join("|");
+        const prev = edges.get(key);
+        if (!prev || kindRank(c.Kind) > kindRank(prev.kind)) {
+          edges.set(key, { a: m.PeerID, b: c.PeerID, kind: c.Kind || "unknown" });
+        }
+      }
+    }
+    return [...edges.values()];
+  }
+
+  function layoutCircle(nodes, cx, cy, r) {
+    const n = nodes.length;
+    if (n === 0) return [];
+    if (n === 1) return [{ ...nodes[0], x: cx, y: cy }];
+    return nodes.map((node, i) => {
+      const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+      return { ...node, x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    });
+  }
+
+  function lineClass(kind) {
+    if (kind === "direct") return "mesh-link mesh-link-direct";
+    if (kind && kind.startsWith("relay")) return "mesh-link mesh-link-relay";
+    return "mesh-link mesh-link-limited";
+  }
+
+  function meshCanvasSize() {
+    const rect = el.meshCanvas.getBoundingClientRect();
+    return {
+      w: Math.max(0, Math.round(rect.width)),
+      h: Math.max(0, Math.round(rect.height)),
+    };
+  }
+
+  function modelsForPeer(peerID) {
+    return state.models.filter((m) =>
+      (m.providers || []).some((p) => p.peer_id === peerID)
+    );
+  }
+
+  function relatedPeerIds(peerID, edges) {
+    const related = new Set([peerID]);
+    for (const e of edges) {
+      if (e.a === peerID) related.add(e.b);
+      if (e.b === peerID) related.add(e.a);
+    }
+    return related;
+  }
+
+  function hideNodeDetail() {
+    el.nodeDetail.classList.add("hidden");
+    el.nodeDetail.hidden = true;
+    el.nodeDetail.innerHTML = "";
+  }
+
+  function renderNodeDetail(member) {
+    if (!member) {
+      hideNodeDetail();
+      return;
+    }
+
+    const models = modelsForPeer(member.PeerID);
+    const conns = (member.Mesh && member.Mesh.Connections) || [];
+    const modelRows = models.length
+      ? models
+          .map((m) => {
+            const status = m.loaded
+              ? `<span class="badge badge-running">loaded</span>`
+              : `<span class="badge">idle</span>`;
+            return `<div class="node-detail-model">
+              <span class="node-detail-model-name" title="${escapeHTML(m.name || m.model)}">${escapeHTML(m.name || m.model)}</span>
+              <span class="node-detail-model-meta">${formatBytes(m.size)}</span>
+              ${status}
+            </div>`;
+          })
+          .join("")
+      : `<div class="empty">No models advertised on this node.</div>`;
+
+    el.nodeDetail.hidden = false;
+    el.nodeDetail.classList.remove("hidden");
+    el.nodeDetail.innerHTML = `
+      <div class="node-detail-header">
+        <div>
+          <h3 class="node-detail-title">${escapeHTML(memberName(member))}</h3>
+          <p class="node-detail-id">${escapeHTML(member.PeerID)}</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-detail aria-label="Close">✕</button>
+      </div>
+      <div class="node-detail-body">
+        <div class="node-detail-meta">
+          ${member.Type === "self" ? `<span class="badge badge-online">this node</span>` : `<span class="badge">peer</span>`}
+          ${member.Reachable ? `<span class="badge badge-running">reachable</span>` : `<span class="badge badge-offline">unreachable</span>`}
+          <span class="badge">${conns.length} link${conns.length === 1 ? "" : "s"}</span>
+        </div>
+        <p class="node-detail-section">Models</p>
+        <div class="node-detail-models">${modelRows}</div>
+      </div>`;
+  }
+
+  function renderMesh() {
+    const members = sortedMembers();
+
+    const reachable = members.filter((m) => m.Reachable).length;
+    el.meshCount.textContent = String(members.length);
+    el.meshSubtitle.textContent = members.length
+      ? `${members.length} member${members.length === 1 ? "" : "s"} · ${reachable} reachable`
+      : "Peer connectivity across the mesh";
+
+    if (state.selectedPeer && !members.some((m) => m.PeerID === state.selectedPeer)) {
+      state.selectedPeer = null;
+    }
+
+    if (!members.length) {
+      el.meshGraph.innerHTML = `<div class="empty">No mesh members yet.</div>`;
+      hideNodeDetail();
+      return;
+    }
+
+    const { w, h } = meshCanvasSize();
+    if (w < 32 || h < 32) return;
+    state.meshSize = { w, h };
+
+    const cx = w / 2;
+    const cy = h / 2;
+    const nodeR = Math.max(14, Math.min(32, Math.min(w, h) * 0.045));
+    const labelSpace = nodeR + 40;
+    const r = Math.max(nodeR + 8, Math.min(cx, cy) - labelSpace);
+    const placed = layoutCircle(members, cx, cy, r);
+    const byID = Object.fromEntries(placed.map((n) => [n.PeerID, n]));
+    const edges = buildEdges(members);
+    const selected = state.selectedPeer;
+    const related = selected ? relatedPeerIds(selected, edges) : null;
+    const labelY = nodeR + 16;
+    const idY = nodeR + 32;
+    const graphClass = selected ? "mesh-graph has-selection" : "mesh-graph";
+
+    const links = edges
+      .map((e) => {
+        const a = byID[e.a];
+        const b = byID[e.b];
+        if (!a || !b) return "";
+        const isRelated = selected && (e.a === selected || e.b === selected);
+        const linkState = selected ? (isRelated ? " is-related" : " is-muted") : "";
+        return `<line class="${lineClass(e.kind)}${linkState}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}">
+          <title>${escapeHTML(memberName(a))} ↔ ${escapeHTML(memberName(b))} (${escapeHTML(e.kind)})</title>
+        </line>`;
+      })
+      .join("");
+
+    const nodes = placed
+      .map((n) => {
+        const isSelected = selected === n.PeerID;
+        const isRelated = related && related.has(n.PeerID);
+        const cls = [
+          "mesh-node",
+          n.Type === "self" ? "is-self" : "",
+          n.Reachable ? "is-up" : "is-down",
+          isSelected ? "is-selected" : "",
+          selected && isRelated && !isSelected ? "is-related" : "",
+          selected && !isRelated ? "is-muted" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const label = escapeHTML(memberName(n));
+        const sub = escapeHTML(shortID(n.PeerID));
+        return `
+          <g class="${cls}" data-peer-id="${escapeHTML(n.PeerID)}" transform="translate(${n.x} ${n.y})">
+            <circle class="mesh-node-hit" r="${nodeR + 12}"></circle>
+            <circle class="mesh-node-dot" r="${nodeR}"></circle>
+            <text class="mesh-node-label" y="${labelY}">${label}</text>
+            <text class="mesh-node-id" y="${idY}">${sub}</text>
+            <title>${label}\n${escapeHTML(n.PeerID)}\n${n.Reachable ? "reachable" : "unreachable"}</title>
+          </g>`;
+      })
+      .join("");
+
+    el.meshGraph.className = graphClass;
+    el.meshGraph.innerHTML = `
+      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Mesh connectivity">
+        <circle class="mesh-ring" cx="${cx}" cy="${cy}" r="${r}"></circle>
+        <circle class="mesh-ring mesh-ring-inner" cx="${cx}" cy="${cy}" r="${r * 0.5}"></circle>
+        <g class="mesh-links">${links}</g>
+        <g class="mesh-nodes">${nodes}</g>
+      </svg>`;
+
+    renderNodeDetail(selected ? byID[selected] : null);
+  }
+
+  function nodeExpandHTML(member) {
+    const models = modelsForPeer(member.PeerID);
+    const mesh = member.Mesh || {};
+    const addrs = mesh.AdvertisedAddresses || [];
+    const conns = mesh.Connections || [];
+
+    const modelList = models.length
+      ? models
+          .map((m) => {
+            const status = m.loaded
+              ? `<span class="badge badge-running">loaded</span>`
+              : `<span class="badge">idle</span>`;
+            return `<div class="node-detail-model">
+              <span class="node-detail-model-name">${escapeHTML(m.name || m.model)}</span>
+              <span class="node-detail-model-meta">${formatBytes(m.size)}</span>
+              ${status}
+            </div>`;
+          })
+          .join("")
+      : `<div class="empty">No models advertised on this node.</div>`;
+
+    const addrList = addrs.length
+      ? `<table class="node-expand-addrs"><tbody>${addrs
+          .map((a) => `<tr><td class="mono">${escapeHTML(a)}</td></tr>`)
+          .join("")}</tbody></table>`
+      : `<div class="empty">No advertised addresses.</div>`;
+
+    const connList = conns.length
+      ? `<table class="node-expand-conns">
+          <thead><tr><th>Peer</th><th>Kind</th><th>Dir</th><th>Remote</th><th>Streams</th></tr></thead>
+          <tbody>${conns
+            .map((c) => `<tr>
+              <td>${escapeHTML(c.PeerName || shortID(c.PeerID))}</td>
+              <td><span class="badge">${escapeHTML(c.Kind || "—")}</span></td>
+              <td class="mono">${escapeHTML(c.Direction || "—")}</td>
+              <td class="mono">${escapeHTML(c.RemoteAddress || "—")}</td>
+              <td class="mono">${c.StreamCount ?? 0}</td>
+            </tr>`)
+            .join("")}</tbody>
+        </table>`
+      : `<div class="empty">No active connections.</div>`;
+
+    return `<div class="node-expand">
+      <div class="node-expand-section">
+        <h4>Identity</h4>
+        <p class="node-expand-id">${escapeHTML(member.PeerID)}</p>
+        <div class="node-detail-meta">
+          ${member.Type === "self" ? `<span class="badge badge-online">this node</span>` : `<span class="badge">peer</span>`}
+          ${member.Reachable ? `<span class="badge badge-running">reachable</span>` : `<span class="badge badge-offline">unreachable</span>`}
+        </div>
+      </div>
+      <div class="node-expand-section">
+        <h4>Models</h4>
+        <div class="node-detail-models">${modelList}</div>
+      </div>
+      <div class="node-expand-section">
+        <h4>Advertised addresses</h4>
+        ${addrList}
+      </div>
+      <div class="node-expand-section node-expand-full">
+        <h4>Connections</h4>
+        ${connList}
+      </div>
+    </div>`;
+  }
+
+  function renderNodes() {
+    const q = state.nodesFilter.trim().toLowerCase();
+    const members = sortedMembers().filter((m) => {
+      if (!q) return true;
+      const models = modelsForPeer(m.PeerID)
+        .map((model) => model.name || model.model)
+        .join(" ");
+      return `${memberName(m)} ${m.PeerID} ${m.Type || ""} ${models}`.toLowerCase().includes(q);
+    });
+
+    el.nodesCount.textContent = String(state.members.length);
+
+    if (state.expandedPeer && !state.members.some((m) => m.PeerID === state.expandedPeer)) {
+      state.expandedPeer = null;
+    }
+
+    if (!members.length) {
+      const msg = state.members.length ? "No nodes match that filter." : "No mesh members yet.";
+      el.nodesBody.innerHTML = `<tr><td colspan="6" class="empty">${msg}</td></tr>`;
+      return;
+    }
+
+    el.nodesBody.innerHTML = members
+      .map((m) => {
+        const models = modelsForPeer(m.PeerID);
+        const conns = (m.Mesh && m.Mesh.Connections) || [];
+        const expanded = state.expandedPeer === m.PeerID;
+        const role = m.Type === "self" ? `<span class="badge badge-online">this node</span>` : `<span class="badge">peer</span>`;
+        const status = m.Reachable
+          ? `<span class="badge badge-running">reachable</span>`
+          : `<span class="badge badge-offline">unreachable</span>`;
+        const modelChips = models.length
+          ? models
+              .map((model) => `<span class="node-chip">${escapeHTML(model.name || model.model)}</span>`)
+              .join("")
+          : "—";
+        return `<tr class="clickable-row node-row${expanded ? " is-expanded" : ""}" data-peer-id="${escapeHTML(m.PeerID)}">
+          <td>
+            <div class="cell-name"><span class="node-chevron">▾</span> ${escapeHTML(memberName(m))}</div>
+          </td>
+          <td class="mono">${escapeHTML(shortID(m.PeerID))}</td>
+          <td>${role}</td>
+          <td>${status}</td>
+          <td><div class="node-chip-row">${modelChips}</div></td>
+          <td class="mono">${conns.length}</td>
+        </tr>
+        ${
+          expanded
+            ? `<tr class="node-expand-row"><td colspan="6">${nodeExpandHTML(m)}</td></tr>`
+            : ""
+        }`;
+      })
+      .join("");
+  }
+
+  function detailKV(label, value) {
+    if (value === undefined || value === null || value === "" || value === 0) return "";
+    return `<div class="profile-grid-row"><span class="label">${escapeHTML(label)}</span><span class="value">${value}</span></div>`;
+  }
+
+  function modelCapabilities(m) {
+    const raw = (m && (m.capabilities || m.Capabilities)) || [];
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const item of raw) {
+      const s = String(item || "").trim();
+      if (!s) continue;
+      const key = s.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    return out;
+  }
+
+  function formatCapability(c) {
+    return String(c || "")
+      .trim()
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+  }
+
+  function modelCapabilitiesHTML(caps) {
+    if (!caps.length) {
+      return `<div class="empty">No capabilities reported.</div>`;
+    }
+    return `<div class="node-chip-row model-cap-row">${caps
+      .map((c) => `<span class="model-cap-chip">${escapeHTML(formatCapability(c))}</span>`)
+      .join("")}</div>`;
+  }
+
+  function modelExpandHTML(m) {
+    const providers = (m.providers || [])
+      .map((p) => {
+        const cls = p.self ? "node-chip is-self" : "node-chip";
+        return `<div class="node-detail-model">
+          <span class="node-detail-model-name">${escapeHTML(p.name)}</span>
+          <span class="node-detail-model-meta mono">${escapeHTML(p.peer_id)}</span>
+          ${p.self ? `<span class="badge badge-online">this node</span>` : ""}
+        </div>`;
+      })
+      .join("") || `<div class="empty">No providers.</div>`;
+
+    const modified = m.modified_at && m.modified_at !== "0001-01-01T00:00:00Z"
+      ? escapeHTML(new Date(m.modified_at).toLocaleString())
+      : "";
+    const families = (m.families || []).filter(Boolean).join(", ");
+    const specs = [
+      detailKV("Family", escapeHTML(m.family || "")),
+      detailKV("Families", escapeHTML(families)),
+      detailKV("Parameters", escapeHTML(m.parameter_size || "")),
+      detailKV("Quantization", escapeHTML(m.quantization || "")),
+      detailKV("Format", escapeHTML(m.format || "")),
+      detailKV("Parent", escapeHTML(m.parent_model || "")),
+      detailKV("Context", m.context_length ? escapeHTML(String(m.context_length)) : ""),
+      detailKV("Size", formatBytes(m.size)),
+      detailKV("VRAM", m.loaded && m.size_vram ? formatBytes(m.size_vram) : ""),
+      detailKV("Modified", modified),
+    ].join("");
+    const caps = modelCapabilities(m);
+
+    return `<div class="node-expand">
+      <div class="node-expand-section">
+        <h4>Identity</h4>
+        <p class="node-expand-id">${escapeHTML(m.name || m.model)}</p>
+        <div class="node-detail-meta">
+          ${m.loaded ? `<span class="badge badge-running">loaded</span>` : `<span class="badge">idle</span>`}
+        </div>
+        <p class="node-expand-id">${escapeHTML(m.digest || "—")}</p>
+      </div>
+      <div class="node-expand-section">
+        <h4>Specs</h4>
+        <div class="model-spec-grid">${specs || `<div class="empty">No extra details.</div>`}</div>
+      </div>
+      <div class="node-expand-section node-expand-full">
+        <h4>Capabilities</h4>
+        ${modelCapabilitiesHTML(caps)}
+      </div>
+      <div class="node-expand-section node-expand-full">
+        <h4>Provided by</h4>
+        <div class="node-detail-models">${providers}</div>
+      </div>
+    </div>`;
+  }
+
+  function renderModels() {
+    const q = state.filter.trim().toLowerCase();
+    const rows = state.models.filter((m) => {
+      if (!q) return true;
+      const hay = [
+        m.name,
+        m.model,
+        m.family,
+        m.parameter_size,
+        m.digest,
+        ...modelCapabilities(m),
+        ...(m.providers || []).map((p) => `${p.name} ${p.peer_id}`),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+
+    el.modelsCount.textContent = String(state.models.length);
+
+    if (state.expandedModel && !state.models.some((m) => (m.name || m.model) === state.expandedModel)) {
+      state.expandedModel = null;
+    }
+
+    if (!rows.length) {
+      const msg = state.models.length ? "No models match that filter." : "No models advertised on the mesh.";
+      el.modelsBody.innerHTML = `<tr><td colspan="6" class="empty">${msg}</td></tr>`;
+      return;
+    }
+
+    el.modelsBody.innerHTML = rows
+      .map((m) => {
+        const key = m.name || m.model;
+        const expanded = state.expandedModel === key;
+        const providers = (m.providers || [])
+          .map((p) => {
+            const cls = p.self ? "node-chip is-self" : "node-chip";
+            const title = escapeHTML(p.peer_id);
+            return `<span class="${cls}" title="${title}">${escapeHTML(p.name)}</span>`;
+          })
+          .join("");
+        const status = m.loaded
+          ? `<span class="badge badge-running">loaded</span>`
+          : `<span class="badge">idle</span>`;
+        const family = [m.family, m.quantization].filter(Boolean).join(" · ") || "—";
+        return `<tr class="clickable-row node-row${expanded ? " is-expanded" : ""}" data-model-name="${escapeHTML(key)}">
+          <td>
+            <div class="cell-name"><span class="node-chevron">▾</span> ${escapeHTML(m.name || m.model)}</div>
+            <div class="mono muted">${escapeHTML(shortID(m.digest))}</div>
+          </td>
+          <td class="mono">${formatBytes(m.size)}</td>
+          <td>${escapeHTML(family)}</td>
+          <td class="mono">${escapeHTML(m.parameter_size || "—")}</td>
+          <td><div class="node-chip-row">${providers || "—"}</div></td>
+          <td>${status}</td>
+        </tr>
+        ${expanded ? `<tr class="node-expand-row"><td colspan="6">${modelExpandHTML(m)}</td></tr>` : ""}`;
+      })
+      .join("");
+  }
+
+  function modelNames() {
+    return state.models
+      .map((m) => m.name || m.model)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function renderMarkdown(text) {
+    const src = String(text || "");
+    const fences = [];
+    let html = escapeHTML(src).replace(/```(?:\w+)?\n([\s\S]*?)```/g, (_, code) => {
+      fences.push(`<pre><code>${code.replace(/\n$/, "")}</code></pre>`);
+      return `\u0000FENCE${fences.length - 1}\u0000`;
+    });
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/(^|[^\*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+    html = html
+      .split(/\n{2,}/)
+      .map((block) => {
+        const lines = block.split("\n");
+        if (lines.every((l) => /^[-*]\s+/.test(l))) {
+          return `<ul>${lines.map((l) => `<li>${l.replace(/^[-*]\s+/, "")}</li>`).join("")}</ul>`;
+        }
+        return `<p>${block.replace(/\n/g, "<br>")}</p>`;
+      })
+      .join("");
+    html = html.replace(/\u0000FENCE(\d+)\u0000/g, (_, i) => fences[Number(i)]);
+    return html;
+  }
+
+  function resizeChatInput() {
+    const box = el.chatInput;
+    box.style.height = "auto";
+    box.style.height = Math.min(box.scrollHeight, 160) + "px";
+  }
+
+  function scrollChat() {
+    el.chatThread.scrollTop = el.chatThread.scrollHeight;
+  }
+
+  function updateChatControls() {
+    const hasModel = Boolean(el.chatModel.value);
+    const hasText = el.chatInput.value.trim().length > 0;
+    el.chatSend.disabled = state.chat.busy ? false : !hasModel || !hasText;
+    el.chatSend.classList.toggle("is-stop", state.chat.busy);
+    el.chatSend.setAttribute("aria-label", state.chat.busy ? "Stop" : "Send");
+    el.chatSend.innerHTML = state.chat.busy
+      ? `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>`;
+    el.chatModel.disabled = state.chat.busy;
+  }
+
+  const MESH_MODEL_PREFIX = "mesh/";
+
+  function bareModelName(value) {
+    const n = String(value || "");
+    return n.startsWith(MESH_MODEL_PREFIX) ? n.slice(MESH_MODEL_PREFIX.length) : n;
+  }
+
+  function findModel(name) {
+    const bare = bareModelName(name);
+    return state.models.find((m) => (m.name || m.model) === bare);
+  }
+
+  function modelOnThisNode(name) {
+    const m = findModel(name);
+    return !!(m && (m.providers || []).some((p) => p.self));
+  }
+
+  function chatModelValue(name) {
+    return modelOnThisNode(name) ? name : MESH_MODEL_PREFIX + name;
+  }
+
+  function updateChatPrivacy() {
+    const box = el.chatPrivacy;
+    if (!box) return;
+    const value = el.chatModel.value;
+    const name = bareModelName(value);
+    if (!name || modelOnThisNode(name)) {
+      box.hidden = true;
+      box.classList.add("hidden");
+      box.textContent = "";
+      return;
+    }
+    const m = findModel(name);
+    const hosts = (m && m.providers ? m.providers : [])
+      .map((p) => p.name)
+      .filter(Boolean);
+    const where = hosts.length ? hosts.join(", ") : "another mesh node";
+    box.hidden = false;
+    box.classList.remove("hidden");
+    box.innerHTML = `<strong>Not on this node.</strong> ${escapeHTML(MESH_MODEL_PREFIX + name)} is served by ${escapeHTML(where)}. Prompts and replies travel over the mesh — this conversation is not private.`;
+  }
+
+  function syncChatModels() {
+    const names = modelNames();
+    const values = names.map(chatModelValue);
+    const current = el.chatModel.value || state.chat.model;
+    el.chatModel.innerHTML = names.length
+      ? names
+          .map((n) => {
+            const value = chatModelValue(n);
+            return `<option value="${escapeHTML(value)}">${escapeHTML(value)}</option>`;
+          })
+          .join("")
+      : `<option value="">No models available</option>`;
+    if (current && values.includes(current)) el.chatModel.value = current;
+    else if (current && values.includes(chatModelValue(bareModelName(current)))) {
+      el.chatModel.value = chatModelValue(bareModelName(current));
+    } else if (values.length) el.chatModel.value = values[0];
+    state.chat.model = el.chatModel.value;
+    updateChatControls();
+    updateChatPrivacy();
+  }
+
+  function formatDuration(ms) {
+    if (ms == null || ms < 0) return "";
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    const s = ms / 1000;
+    return s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
+  }
+
+  function chatMetaHTML(msg) {
+    const parts = [];
+    if (msg.model) parts.push(escapeHTML(msg.model));
+    if (msg.durationMs != null) parts.push(formatDuration(msg.durationMs));
+    if (!parts.length) return "";
+    return `<p class="chat-meta">${parts.join(" · ")}</p>`;
+  }
+
+  function renderChatThread() {
+    if (!state.chat.messages.length) {
+      el.chatThread.innerHTML = `
+        <div class="chat-empty">
+          <h2>What can I help with?</h2>
+          <p class="muted">Ask a model on this mesh. This conversation stays in memory and is discarded when you start a new chat.</p>
+        </div>`;
+      return;
+    }
+
+    el.chatThread.innerHTML = state.chat.messages
+      .map((msg, i) => {
+        const last = i === state.chat.messages.length - 1;
+        if (msg.role === "user") {
+          return `<article class="chat-msg chat-msg-user"><div class="chat-bubble">${escapeHTML(msg.content)}</div></article>`;
+        }
+        const meta = chatMetaHTML(msg);
+        if (msg.error) {
+          return `<article class="chat-msg chat-msg-assistant"><p class="chat-error">${escapeHTML(msg.error)}</p>${meta}</article>`;
+        }
+        if (!msg.content && state.chat.busy && last) {
+          return `<article class="chat-msg chat-msg-assistant"><div class="chat-pending" id="chat-stream"><i></i><i></i><i></i></div>${meta}</article>`;
+        }
+        const streamId = last && state.chat.busy ? ` id="chat-stream"` : "";
+        return `<article class="chat-msg chat-msg-assistant"><div class="chat-md"${streamId}>${renderMarkdown(msg.content)}</div>${meta}</article>`;
+      })
+      .join("");
+    scrollChat();
+  }
+
+  function patchStream(content) {
+    let node = document.getElementById("chat-stream");
+    if (!node || node.classList.contains("chat-pending")) {
+      renderChatThread();
+      node = document.getElementById("chat-stream");
+    }
+    if (node) {
+      node.className = "chat-md";
+      node.innerHTML = renderMarkdown(content);
+      scrollChat();
+    }
+  }
+
+  async function readChatResponse(res, onDelta) {
+    const ctype = res.headers.get("content-type") || "";
+    if (ctype.includes("application/json") && !ctype.includes("event-stream")) {
+      const json = await res.json();
+      const text = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
+      if (text) onDelta(text);
+      return;
+    }
+    if (!res.body) throw new Error("empty response");
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split(/\r?\n/);
+      buf = lines.pop();
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          const json = JSON.parse(data);
+          const delta =
+            (json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content) ||
+            (json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) ||
+            "";
+          if (delta) onDelta(delta);
+        } catch (_) {
+          /* ignore partial SSE frames */
+        }
+      }
+    }
+  }
+
+  async function sendChat(fromComposer) {
+    if (state.chat.busy) {
+      if (fromComposer && state.chat.abort) state.chat.abort.abort();
+      return;
+    }
+    const text = el.chatInput.value.trim();
+    const model = bareModelName(el.chatModel.value);
+    if (!text || !model) return;
+
+    el.chatInput.value = "";
+    resizeChatInput();
+    state.chat.messages.push({ role: "user", content: text });
+    state.chat.messages.push({
+      role: "assistant",
+      content: "",
+      model: el.chatModel.value,
+    });
+    state.chat.busy = true;
+    const assistant = state.chat.messages[state.chat.messages.length - 1];
+    const started = performance.now();
+    renderChatThread();
+    updateChatControls();
+
+    const apiMessages = state.chat.messages
+      .slice(0, -1)
+      .filter((m) => m.role === "user" || (m.role === "assistant" && m.content))
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    const ac = new AbortController();
+    state.chat.abort = ac;
+    try {
+      const res = await fetch("/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: apiMessages,
+          stream: true,
+        }),
+        signal: ac.signal,
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || res.statusText);
+      }
+      await readChatResponse(res, (delta) => {
+        assistant.content += delta;
+        patchStream(assistant.content);
+      });
+      if (!assistant.content) assistant.content = "(no response)";
+      renderChatThread();
+    } catch (err) {
+      if (err.name === "AbortError") {
+        if (!assistant.content) state.chat.messages.pop();
+        renderChatThread();
+      } else {
+        assistant.error = err.message || String(err);
+        assistant.content = assistant.content || "";
+        renderChatThread();
+      }
+    } finally {
+      assistant.durationMs = performance.now() - started;
+      state.chat.busy = false;
+      state.chat.abort = null;
+      renderChatThread();
+      updateChatControls();
+      el.chatInput.focus();
+    }
+  }
+
+  function newChat() {
+    if (state.chat.abort) state.chat.abort.abort();
+    state.chat.messages = [];
+    state.chat.busy = false;
+    state.chat.abort = null;
+    renderChatThread();
+    updateChatControls();
+    el.chatInput.focus();
+  }
+
+  async function renderSettings() {
+    if (!el.settingsYaml) return;
+    try {
+      const data = await getJSON("/api/mesh/config");
+      if (data.path && el.settingsSubtitle) {
+        el.settingsSubtitle.textContent = data.path;
+      }
+      el.settingsYaml.textContent = data.content || "";
+    } catch (err) {
+      el.settingsYaml.textContent = "Could not load config.yaml\n" + (err.message || err);
+    }
+  }
+
+  function render() {
+    if (state.view === "mesh") renderMesh();
+    else if (state.view === "nodes") renderNodes();
+    else if (state.view === "models") renderModels();
+    else if (state.view === "chat") syncChatModels();
+    else if (state.view === "settings") renderSettings();
+  }
+
+  function showView(name) {
+    state.view = name;
+    document.querySelectorAll(".sidebar-item").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.view === name);
+    });
+    document.querySelectorAll(".view").forEach((view) => {
+      view.classList.toggle("active", view.dataset.view === name);
+    });
+    render();
+    if (name === "chat") {
+      renderChatThread();
+      el.chatInput.focus();
+    }
+  }
+
+  async function refresh() {
+    try {
+      const [members, models] = await Promise.all([
+        getJSON("/api/mesh/members"),
+        getJSON("/api/mesh/models"),
+      ]);
+      state.members = members.Nodes || members.nodes || [];
+      state.models = models.models || models.Models || [];
+      state.error = null;
+      el.meshCount.textContent = String(state.members.length);
+      el.nodesCount.textContent = String(state.members.length);
+      el.modelsCount.textContent = String(state.models.length);
+      const up = state.members.filter((m) => m.Reachable).length;
+      setStatus("online", `${up}/${state.members.length} reachable`);
+      syncChatModels();
+      render();
+    } catch (err) {
+      state.error = err;
+      setStatus("offline", "API unavailable");
+      console.error(err);
+    }
+  }
+
+  document.querySelectorAll(".sidebar-item").forEach((btn) => {
+    btn.addEventListener("click", () => showView(btn.dataset.view));
+  });
+  document.getElementById("btn-refresh").addEventListener("click", () => {
+    setStatus("loading", "Refreshing");
+    refresh();
+  });
+  el.search.addEventListener("input", () => {
+    state.filter = el.search.value;
+    if (state.view === "models") renderModels();
+  });
+  el.modelsBody.addEventListener("click", (e) => {
+    const row = e.target.closest("tr.node-row");
+    if (!row) return;
+    const name = row.getAttribute("data-model-name");
+    state.expandedModel = state.expandedModel === name ? null : name;
+    renderModels();
+  });
+  el.nodesSearch.addEventListener("input", () => {
+    state.nodesFilter = el.nodesSearch.value;
+    if (state.view === "nodes") renderNodes();
+  });
+  el.chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendChat(true);
+  });
+  el.chatInput.addEventListener("input", () => {
+    resizeChatInput();
+    updateChatControls();
+  });
+  el.chatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!state.chat.busy) sendChat(false);
+    }
+  });
+  el.chatModel.addEventListener("change", () => {
+    state.chat.model = el.chatModel.value;
+    updateChatControls();
+    updateChatPrivacy();
+  });
+  el.btnNewChat.addEventListener("click", () => newChat());
+  el.nodesBody.addEventListener("click", (e) => {
+    const row = e.target.closest("tr.node-row");
+    if (!row) return;
+    const id = row.getAttribute("data-peer-id");
+    state.expandedPeer = state.expandedPeer === id ? null : id;
+    renderNodes();
+  });
+  el.meshCanvas.addEventListener("click", (e) => {
+    if (e.target.closest("[data-close-detail]")) {
+      state.selectedPeer = null;
+      renderMesh();
+      return;
+    }
+    if (e.target.closest(".node-detail")) return;
+    const node = e.target.closest("[data-peer-id]");
+    if (node) {
+      const id = node.getAttribute("data-peer-id");
+      state.selectedPeer = state.selectedPeer === id ? null : id;
+      renderMesh();
+      return;
+    }
+    if (state.selectedPeer) {
+      state.selectedPeer = null;
+      renderMesh();
+    }
+  });
+
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver((entries) => {
+      if (state.view !== "mesh") return;
+      const box = entries[0] && entries[0].contentRect;
+      if (!box) return;
+      const w = Math.round(box.width);
+      const h = Math.round(box.height);
+      if (w === state.meshSize.w && h === state.meshSize.h) return;
+      renderMesh();
+    });
+    ro.observe(el.meshCanvas);
+  } else {
+    window.addEventListener("resize", () => {
+      if (state.view === "mesh") renderMesh();
+    });
+  }
+
+  renderChatThread();
+  updateChatControls();
+  refresh();
+  setInterval(refresh, POLL_MS);
+})();
