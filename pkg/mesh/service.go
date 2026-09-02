@@ -137,6 +137,8 @@ func (m *Service) openStreamDirect(ctx context.Context, dest peer.ID, proto prot
 func (m *Service) openStream(ctx context.Context, dest peer.ID, pids ...protocol.ID) (network.Stream, error) {
 	// for the mesh proxy to work we need a direct connection, circuit (relay/limited) connections are short lived
 	// and will result in long queries to ollama to timeout (connections only live for a couple minutes)
+	// TODO: we could use the relay for some of our short-lived commands like getting member status and models as those
+	//   are short
 	if s, err := m.openStreamDirect(ctx, dest, OllamaProtocol); err == nil {
 		return s, nil
 	}

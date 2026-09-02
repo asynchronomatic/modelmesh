@@ -64,7 +64,7 @@ func (s *Server) authenticate(r *http.Request) (string, bool) {
 	return "", false
 }
 
-func (s *Server) handle(fn func(*Context) error) http.HandlerFunc {
+func (s *Server) handle(fn func(*JsonRPC) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		user := "--"
@@ -79,7 +79,7 @@ func (s *Server) handle(fn func(*Context) error) http.HandlerFunc {
 			return
 		}
 
-		ctx := &Context{w: w, r: r, user: user}
+		ctx := &JsonRPC{w: w, r: r, user: user}
 		if err := fn(ctx); err != nil {
 			if ce, ok := err.(*api.Error); ok {
 				ctx.Error(ce.Code(), ce.Message())

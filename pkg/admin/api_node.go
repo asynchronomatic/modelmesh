@@ -19,7 +19,7 @@ func newNodeToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *Server) apiNodeAuthorize(ctx *Context) error {
+func (s *Server) apiNodeAuthorize(ctx *JsonRPC) error {
 	var req api.RegisterNodeRequest
 	if err := ctx.GetObject(&req); err != nil {
 		return api.NewError(http.StatusBadRequest, err.Error())
@@ -33,7 +33,7 @@ func (s *Server) apiNodeAuthorize(ctx *Context) error {
 }
 
 // TODO: nodes need to expire if we have not heard from them in a while
-func (s *Server) apiNodeRegister(ctx *Context) error {
+func (s *Server) apiNodeRegister(ctx *JsonRPC) error {
 	var req api.RegisterNodeRequest
 	if err := ctx.GetObject(&req); err != nil {
 		return api.NewError(http.StatusBadRequest, err.Error())
@@ -74,7 +74,7 @@ func (s *Server) apiNodeRegister(ctx *Context) error {
 	return ctx.ReplyObject(&resp)
 }
 
-func (s *Server) apiNodeRefresh(ctx *Context) error {
+func (s *Server) apiNodeRefresh(ctx *JsonRPC) error {
 	id := ctx.PathVar("id")
 	if id == "" {
 		return api.NewError(http.StatusBadRequest, "node id is required")
@@ -123,7 +123,7 @@ func (s *Server) apiNodeRefresh(ctx *Context) error {
 	return ctx.ReplyObject(&resp)
 }
 
-func (s *Server) apiNodeUnregister(ctx *Context) error {
+func (s *Server) apiNodeUnregister(ctx *JsonRPC) error {
 	id := ctx.PathVar("id")
 	if id == "" {
 		return api.NewError(http.StatusBadRequest, "node id is required")
@@ -147,7 +147,7 @@ func (s *Server) apiNodeUnregister(ctx *Context) error {
 	return ctx.ReplyObject(&node)
 }
 
-func (s *Server) apiNodeList(ctx *Context) error {
+func (s *Server) apiNodeList(ctx *JsonRPC) error {
 	s.lock.Lock()
 	resp := api.ListNodesResponse{
 		Nodes: make([]api.Node, 0, len(s.nodes)),
@@ -161,7 +161,7 @@ func (s *Server) apiNodeList(ctx *Context) error {
 	return ctx.ReplyObject(&resp)
 }
 
-func (s *Server) apiRelayGet(ctx *Context) error {
+func (s *Server) apiRelayGet(ctx *JsonRPC) error {
 	s.lock.Lock()
 	resp := api.GetRelayResponse{
 		MultiAddress: s.relayAddress,

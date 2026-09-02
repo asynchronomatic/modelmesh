@@ -29,7 +29,7 @@ func (p *Proxy) openaiListModelsHandler(w http.ResponseWriter, r *http.Request) 
 		Object: "list",
 	}
 
-	for _, model := range p.localRoutes {
+	for _, model := range p.meshRoutes {
 		resp.Data = append(resp.Data, OpenaiModel{
 			ID:      model.Name,
 			Object:  "model",
