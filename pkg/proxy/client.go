@@ -5,6 +5,7 @@ import (
 
 	"modelmesh/pkg/core"
 	"modelmesh/pkg/jsonclient"
+	"modelmesh/pkg/proxy/modeldex"
 )
 
 // MeshClient for making api calls across the mesh network
@@ -14,11 +15,11 @@ type MeshClient struct {
 }
 
 type MeshListModelsResponse struct {
-	Models []ModelRoute `json:"models"`
+	Models []modeldex.ModelRoute `json:"models"`
 }
 
 // GetModelsMesh gets models over the mesh ( internal RPC )
-func (c *MeshClient) GetModelsMesh() (map[string]ModelRoute, error) {
+func (c *MeshClient) GetModelsMesh() (map[string]modeldex.ModelRoute, error) {
 	resp := MeshListModelsResponse{}
 
 	jc := jsonclient.NewClient(fmt.Sprintf("http://%s.mesh", c.address), "").WithDoer(c.client)
@@ -27,7 +28,7 @@ func (c *MeshClient) GetModelsMesh() (map[string]ModelRoute, error) {
 		return nil, err
 	}
 
-	models := make(map[string]ModelRoute)
+	models := make(map[string]modeldex.ModelRoute)
 
 	for _, m := range resp.Models {
 		models[m.Name] = m

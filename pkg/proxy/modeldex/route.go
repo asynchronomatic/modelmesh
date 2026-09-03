@@ -1,4 +1,4 @@
-package proxy
+package modeldex
 
 import (
 	"time"
@@ -31,12 +31,12 @@ type ModelRoute struct {
 	peers     map[string]core.PeerNode // peernodes that contain this model
 }
 
-func (r *ModelRoute) isLocal() bool {
+func (r *ModelRoute) IsLocal() bool {
 	log.Debugf("%s: local:%d", r.Name, len(r.providers))
 	return len(r.providers) != 0
 }
 
-func (r *ModelRoute) isPrivate() bool {
+func (r *ModelRoute) IsPrivate() bool {
 	for _, provider := range r.providers {
 		if provider.Private {
 			return true
@@ -45,7 +45,7 @@ func (r *ModelRoute) isPrivate() bool {
 	return false
 }
 
-func (r *ModelRoute) getMeshPeerRoute() *core.PeerNode {
+func (r *ModelRoute) GetMeshPeerRoute() *core.PeerNode {
 	for id := range r.peers {
 		node := r.peers[id]
 		return &node
@@ -53,7 +53,7 @@ func (r *ModelRoute) getMeshPeerRoute() *core.PeerNode {
 	return nil
 }
 
-func (r *ModelRoute) getLocalRoute() *LocalRoute {
+func (r *ModelRoute) GetLocalRoute() *LocalRoute {
 	if len(r.providers) == 0 {
 		return nil
 	}
@@ -78,6 +78,14 @@ func (r *ModelRoute) RemovePeer(peer core.PeerNode) {
 
 func (r *ModelRoute) IsAvailable() bool {
 	return len(r.peers) != 0 || len(r.providers) != 0
+}
+
+func (r *ModelRoute) GetPeers() []core.PeerNode {
+	peers := make([]core.PeerNode, 0, len(r.peers))
+	for id := range r.peers {
+		peers = append(peers, r.peers[id])
+	}
+	return peers
 }
 
 func MakeRoute(name, model string, capabilities []string) ModelRoute {

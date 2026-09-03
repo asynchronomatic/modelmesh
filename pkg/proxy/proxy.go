@@ -20,6 +20,7 @@ import (
 	"github.com/sethvargo/go-retry"
 
 	"modelmesh/pkg/log"
+	"modelmesh/pkg/proxy/modeldex"
 
 	"modelmesh/pkg/core"
 )
@@ -54,7 +55,7 @@ type Proxy struct {
 	//meshRoutesOAI map[string]*ModelRoute // contains all models discovered in the mesh
 	//localRoutes map[string]*ModelRoute // contain the mapping of a model to a ollama server configured to this node
 
-	modelRouter *ModelRouter
+	modelRouter *modeldex.ModelRouter
 }
 
 func (p *Proxy) peekModel(body []byte) string {
@@ -92,7 +93,7 @@ func (p *Proxy) proxyModelRequest(w http.ResponseWriter, r *http.Request, noRela
 	}
 
 	// Always try local routes first
-	local := route.getLocalRoute()
+	local := route.GetLocalRoute()
 	if local != nil {
 		log.Debugf(" -- Servicing via ollama node: %s\n", local.BaseURL)
 
@@ -124,7 +125,7 @@ func (p *Proxy) proxyModelRequest(w http.ResponseWriter, r *http.Request, noRela
 		return
 	}
 
-	destNode := route.getMeshPeerRoute()
+	destNode := route.GetMeshPeerRoute()
 	if destNode == nil {
 		log.Debugf(" -- No model available, returning 404")
 		http.Error(w, "no model available", http.StatusNotFound)
@@ -152,7 +153,7 @@ func (p *Proxy) OnPeerUpdate(peer core.PeerNode, remove bool) error {
 	// discovery will try again on the next poll if this still fails.
 	client := NewMeshClient(peer.Name, p.mesh.ClientForPeer(peer, true))
 
-	var models map[string]ModelRoute
+	var models map[string]modeldex.ModelRoute
 	err := retry.Do(context.Background(), retry.WithMaxRetries(3, retry.NewFibonacci(2*time.Second)),
 		func(ctx context.Context) error {
 			var err error
@@ -243,7 +244,7 @@ func (p *Proxy) Serve(ctx context.Context) error {
 // endpoint on the network
 func NewProxy(meshService core.MeshServiceProvider, listen string, providers []core.Provider) (*Proxy, error) {
 
-	modelRouter := NewModelDiscovery(meshService.Node(), providers)
+	modelRouter := modeldex.NewModelDiscovery(meshService.Node(), providers)
 	modelRouter.Refresh()
 
 	p := &Proxy{

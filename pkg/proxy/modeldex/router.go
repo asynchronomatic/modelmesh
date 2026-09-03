@@ -1,4 +1,4 @@
-package proxy
+package modeldex
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func (e *ModelRouter) ListExportedModels() []ModelRoute {
 
 	for name := range e.MeshModels {
 		model := e.MeshModels[name]
-		if model.isLocal() && !model.isPrivate() {
+		if model.IsLocal() && !model.IsPrivate() {
 			local = append(local, model)
 		}
 	}

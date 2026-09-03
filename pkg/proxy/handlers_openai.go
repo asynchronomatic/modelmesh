@@ -5,22 +5,12 @@ import (
 	"net/http"
 
 	"modelmesh/pkg/mesh"
+	"modelmesh/pkg/proxy/modeldex"
 )
 
-type OpenaiModel struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	OwnedBy string `json:"owned_by"`
-	// Extensions [ Grok, ]
-	ContextLength        int `json:"context_length"`
-	LongContextThreshold int `json:"long_context_threshold"`
-}
-
-type OpenaiModelList struct {
-	Object string        `json:"object"`
-	Data   []OpenaiModel `json:"data"`
-}
+// FIXME: alias until we restructure the code a bit
+type OpenaiModel = modeldex.OpenaiModel
+type OpenaiModelList = modeldex.OpenaiModelList
 
 func (p *Proxy) openaiListModelsHandler(w http.ResponseWriter, r *http.Request) {
 	if mesh.IsSource(r) {

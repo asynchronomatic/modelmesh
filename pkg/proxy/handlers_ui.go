@@ -11,15 +11,12 @@ import (
 
 	"github.com/ollama/ollama/types/model"
 
+	"modelmesh/pkg/core"
 	"modelmesh/pkg/log"
 	"modelmesh/web"
 )
 
-type UIModelProvider struct {
-	Name   string `json:"name"`
-	PeerID string `json:"peer_id"`
-	Self   bool   `json:"self"`
-}
+type UIModelProvider = core.PeerNode
 
 type UIModel struct {
 	Name          string            `json:"name"`
@@ -122,7 +119,7 @@ func (p *Proxy) uiConfigHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) uiModelsHandler(w http.ResponseWriter, r *http.Request) {
-	peers, _ := p.mesh.GetPeerMap()
+	//peers, _ := p.mesh.GetPeerMap()
 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -137,34 +134,13 @@ func (p *Proxy) uiModelsHandler(w http.ResponseWriter, r *http.Request) {
 		m := UIModel{
 			Name:          route.Name,
 			Model:         route.Model,
-			Private:       route.isPrivate(),
+			Private:       route.IsPrivate(),
 			ContextLength: route.ContextLength,
 			ModifiedAt:    route.ModifiedAt,
 			Owner:         route.Owner,
 			Capabilities:  route.Capabilities,
-			Providers:     make([]UIModelProvider, 0),
+			Providers:     route.GetPeers(),
 		}
-
-		// FIXME hide peers
-		for peerID := range route.peers {
-			name := shortPeer(peerID)
-			if peerID == p.mesh.Node().ID && p.mesh.Node().Name != "" {
-				name = p.mesh.Node().Name
-			} else if n, ok := peers[peerID]; ok && n.Name != "" {
-				name = n.Name
-			}
-			m.Providers = append(m.Providers, UIModelProvider{
-				Name:   name,
-				PeerID: peerID,
-				Self:   peerID == p.mesh.Node().ID,
-			})
-		}
-		sort.Slice(m.Providers, func(i, j int) bool {
-			if m.Providers[i].Self != m.Providers[j].Self {
-				return m.Providers[i].Self
-			}
-			return m.Providers[i].Name < m.Providers[j].Name
-		})
 		resp.Models = append(resp.Models, m)
 	}
 
