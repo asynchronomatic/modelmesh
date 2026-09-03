@@ -9,16 +9,17 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"modelmesh/api"
+	"modelmesh/pkg/core"
 	"modelmesh/pkg/log"
 )
 
 type DiscoveryManager struct {
 	admin       *api.Client
 	h           host.Host
-	node        *api.Node
+	node        core.PeerNode
 	string      map[peer.ID]struct{}
 	MDNSEnabled bool
-	onUpdate    func(peerID string, removed bool) error
+	onUpdate    core.UpdateHandlerFunc
 }
 
 func (d *DiscoveryManager) diffNodes(old, new map[string]api.Node) (map[string]api.Node, map[string]api.Node) {
@@ -68,7 +69,7 @@ func (d *DiscoveryManager) listenForMeshEvents() {
 	for e := range sub.Out() {
 		switch ev := e.(type) {
 		default:
-			log.WithName("disc").Eventf("%T: %+v", e, ev)
+			log.WithName("disc").Debugf("%T: %+v", e, ev)
 		}
 	}
 	log.WithName("disc").Fatalf("discovery routine exited")
@@ -87,7 +88,7 @@ func (d *DiscoveryManager) listenForPeerUpdates() {
 
 	// FIXME: use a retryer
 	for {
-		registration, err = d.admin.Register(d.node.Name, d.node.PeerId)
+		registration, err = d.admin.Register(d.node.Name, d.node.ID)
 		if err != nil {
 			log.WithName("disc").Errorf("failed to register: %v", err)
 			time.Sleep(time.Second * 10)
@@ -106,8 +107,8 @@ func (d *DiscoveryManager) listenForPeerUpdates() {
 		}
 
 		if !valid {
-			log.WithName("disc").Warnf("%s lost registration is invalid, reregistering", d.node.PeerId)
-			newReg, err := d.admin.Register(d.node.Name, d.node.PeerId)
+			log.WithName("disc").Warnf("%s lost registration is invalid, reregistering", d.node.ID)
+			newReg, err := d.admin.Register(d.node.Name, d.node.ID)
 			if err != nil {
 				log.WithName("disc").Errorf("failed to register: %v", err)
 				time.Sleep(time.Second * 10)
@@ -136,28 +137,28 @@ func (d *DiscoveryManager) listenForPeerUpdates() {
 
 			updatedPeers, removedPeers := d.diffNodes(lastPeers, currentPeers)
 			for _, node := range removedPeers {
-				log.WithName("disc").Eventf("peer down %s", node.PeerId)
-				if err := d.onUpdate(node.PeerId, true); err != nil {
+				log.WithName("disc").Eventf("peer down %s", node.ID)
+				if err := d.onUpdate(core.NewPeerNode(node.ID, node.Name), true); err != nil {
 					// save the node, removal failed
-					n, ok := lastPeers[node.PeerId]
+					n, ok := lastPeers[node.ID]
 					if !ok {
 						panic("node not found in lastPeers")
 					}
 
-					currentPeers[n.PeerId] = n
+					currentPeers[n.ID] = n
 					goodUpdate = false
 				}
 			}
 
 			for _, node := range updatedPeers {
-				log.WithName("disc").Eventf("peer updated %s", node.PeerId)
-				if err := d.onUpdate(node.PeerId, false); err != nil {
-					n, ok := currentPeers[node.PeerId]
+				log.WithName("disc").Eventf("peer updated %s", node.ID)
+				if err := d.onUpdate(core.NewPeerNode(node.ID, node.Name), false); err != nil {
+					n, ok := currentPeers[node.ID]
 					if !ok {
 						panic("node not found in currentPeers")
 					}
 					n.LastUpdate = time.Time{}
-					currentPeers[n.PeerId] = n
+					currentPeers[n.ID] = n
 					goodUpdate = false
 				}
 			}
@@ -178,12 +179,12 @@ func (d *DiscoveryManager) GetPeerMap() (map[string]api.Node, error) {
 	}
 	peerMap := make(map[string]api.Node)
 	for _, p := range peers {
-		peerMap[p.PeerId] = p
+		peerMap[p.ID] = p
 	}
 	return peerMap, nil
 }
 
-func (d *DiscoveryManager) UpdateHandler(onUpdate func(peerId string, removed bool) error) {
+func (d *DiscoveryManager) UpdateHandler(onUpdate core.UpdateHandlerFunc) {
 	d.onUpdate = onUpdate
 }
 
@@ -204,7 +205,7 @@ func (d *DiscoveryManager) Serve(ctx context.Context) error {
 	return nil
 }
 
-func NewDiscoveryManager(a *api.Client, h host.Host, node *api.Node, MDNSEnabled bool) *DiscoveryManager {
+func NewDiscoveryManager(a *api.Client, h host.Host, node core.PeerNode, MDNSEnabled bool) *DiscoveryManager {
 	return &DiscoveryManager{
 		admin:       a,
 		h:           h,

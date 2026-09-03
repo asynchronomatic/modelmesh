@@ -18,6 +18,7 @@ import (
 	"modelmesh/pkg/log"
 )
 
+// FIXME: move this to proxy
 const OllamaProtocol = "/ollama/0.0.1"
 
 func CircuitAddr(relayInfo peer.AddrInfo, dest peer.ID) (ma.Multiaddr, error) {

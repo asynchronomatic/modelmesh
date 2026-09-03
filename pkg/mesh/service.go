@@ -23,6 +23,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
 	ma "github.com/multiformats/go-multiaddr"
 
+	"modelmesh/pkg/jsonclient"
 	"modelmesh/pkg/log"
 
 	"modelmesh/api"
@@ -41,8 +42,10 @@ const (
 )
 
 type Service struct {
-	Name      string
-	ID        string
+	node core.PeerNode
+
+	//Name      string
+	//ID        string
 	h         host.Host
 	res       *client.Reservation
 	relayInfo []peer.AddrInfo
@@ -58,7 +61,7 @@ func (m *Service) Close() error {
 	return m.h.Close()
 }
 
-func (m *Service) Connect(destNode string) peer.ID {
+func (m *Service) connectNode(destNode string) peer.ID {
 	if destID, ok := m.peers[destNode]; ok {
 		return destID
 	}
@@ -134,38 +137,52 @@ func (m *Service) openStreamDirect(ctx context.Context, dest peer.ID, proto prot
 // openStream attempts to establish a direct connection to the provided peer ID using the specified protocols.
 // If a direct connection cannot be established, it triggers a circuit relay connection as a fallback.
 // Returns the established network stream or an error if no connection can be made.
-func (m *Service) openStream(ctx context.Context, dest peer.ID, pids ...protocol.ID) (network.Stream, error) {
+func (m *Service) openStream(ctx context.Context, dest peer.ID, longLived bool, proto protocol.ID) (network.Stream, error) {
 	// for the mesh proxy to work we need a direct connection, circuit (relay/limited) connections are short lived
 	// and will result in long queries to ollama to timeout (connections only live for a couple minutes)
 	// TODO: we could use the relay for some of our short-lived commands like getting member status and models as those
 	//   are short
-	if s, err := m.openStreamDirect(ctx, dest, OllamaProtocol); err == nil {
+	if s, err := m.openStreamDirect(ctx, dest, proto); err == nil {
 		return s, nil
 	}
 
-	log.WithName("mesh").Debugf("could not open a direct connection")
-
-	// since no direct connection is available, request a limited connection. This will cause libp2p to open a circuit relay
-	// connection, we cannot accept proxy sessions over this.. but it will force a kickoff of hole-punching
-	_ = func() error {
-		lctx := network.WithAllowLimitedConn(ctx, OllamaProtocol)
-		if err := m.h.Connect(lctx, peer.AddrInfo{ID: dest}); err != nil {
-			log.WithName("mesh").Debugf("could not open a circuit connection either")
-			return err
+	// If we can't get a direct connection, initiate connect to the circuit address (which may be limited)
+	// this is to force hole punching...
+	anyCtx := network.WithAllowLimitedConn(ctx, string(proto))
+	if err := m.h.Connect(anyCtx, peer.AddrInfo{ID: dest}); err == nil {
+		if !longLived {
+			// the client indicated that the stream will be short-lived ... so we can give it a relay/limited stream
+			return m.h.NewStream(anyCtx, dest, proto)
 		}
-		return nil
-	}()
-
+	}
+	// could not acquire a connection to dest
 	return nil, fmt.Errorf("no direct connection to %s available (waiting for hole-punch)", dest)
 }
 
-func (m *Service) NewStream(destNode string, pids ...protocol.ID) (network.Stream, error) {
-	destID := m.Connect(destNode)
-	return m.openStream(context.Background(), destID, pids...)
+func (m *Service) NewStream(destNode string, longLived bool, proto protocol.ID) (network.Stream, error) {
+	destID := m.connectNode(destNode) // ensure node is in our address tables
+	return m.openStream(context.Background(), destID, longLived, proto)
 }
 
-func (m *Service) ProxyToNode(destNode string, w http.ResponseWriter, r *http.Request) {
-	stream, err := m.NewStream(destNode, OllamaProtocol)
+func (m *Service) ClientForPeer(peer core.PeerNode, longLived bool) jsonclient.Doer {
+	destID := m.connectNode(peer.ID)
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
+			s, err := m.openStream(ctx, destID, longLived, OllamaProtocol)
+			if err != nil {
+				return nil, err
+			}
+			return streamConn{s}, nil
+		},
+		ForceAttemptHTTP2: false,
+		// Optional: disable keep-alives if the far side closes after one request
+		// DisableKeepAlives: true,
+	}
+	return &http.Client{Transport: tr, Timeout: 45 * time.Second}
+}
+
+func (m *Service) ProxyToNode(destNode core.PeerNode, w http.ResponseWriter, r *http.Request) {
+	stream, err := m.NewStream(destNode.ID, true, OllamaProtocol)
 	if err != nil {
 		log.Printf("could not contact peer: %s err:%v", destNode, err)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -203,30 +220,16 @@ func (m *Service) ProxyToNode(destNode string, w http.ResponseWriter, r *http.Re
 	}
 }
 
-func (m *Service) ClientForPeer(peerID string) *http.Client {
-	destID := m.Connect(peerID)
-
-	tr := &http.Transport{
-		DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
-			s, err := m.openStream(ctx, destID, OllamaProtocol)
-			if err != nil {
-				return nil, err
-			}
-			return streamConn{s}, nil
-		},
-		ForceAttemptHTTP2: false,
-		// Optional: disable keep-alives if the far side closes after one request
-		// DisableKeepAlives: true,
-	}
-	return &http.Client{Transport: tr, Timeout: 45 * time.Second}
+func (m *Service) Node() core.PeerNode {
+	return m.node
 }
 
-func (m *Service) Handler(h http.HandlerFunc) {
+func (m *Service) WithHandlerFunc(h http.HandlerFunc) {
 	m.handler = h
 }
 
-func (m *Service) Discovery() *DiscoveryManager {
-	return m.discovery
+func (m *Service) WithUpdateHandlerFunc(h core.UpdateHandlerFunc) {
+	m.discovery.UpdateHandler(h)
 }
 
 func (m *Service) streamHandler(stream network.Stream) {
@@ -266,14 +269,19 @@ func (m *Service) GetPeerConnKind(id string) string {
 	return ""
 }
 
-func (m *Service) GetPeerMap() (map[string]api.Node, error) {
+func (m *Service) GetPeerMap() (map[string]core.PeerNode, error) {
 	peers, err := m.admin.GetPeers()
 	if err != nil {
 		return nil, err
 	}
-	peerMap := make(map[string]api.Node)
+	peerMap := make(map[string]core.PeerNode)
 	for _, p := range peers {
-		peerMap[p.PeerId] = p
+		peerMap[p.ID] = core.PeerNode{
+			ID:          p.ID,
+			Name:        p.Name,
+			LastUpdate:  p.LastUpdate,
+			LogicalTime: p.LogicalTime,
+		}
 	}
 	return peerMap, nil
 }
@@ -284,7 +292,7 @@ func (m *Service) diffNodes(old, new map[string]api.Node) (map[string]api.Node, 
 
 	// Find added or changed nodes
 	for id, newNode := range new {
-		if id == m.ID { // filter self
+		if id == m.node.ID { // filter self
 			continue
 		}
 
@@ -295,7 +303,7 @@ func (m *Service) diffNodes(old, new map[string]api.Node) (map[string]api.Node, 
 
 	// Find removed nodes
 	for id, oldNode := range old {
-		if id == m.ID { // filter self
+		if id == m.node.ID { // filter self
 			continue
 		}
 
@@ -307,13 +315,13 @@ func (m *Service) diffNodes(old, new map[string]api.Node) (map[string]api.Node, 
 	return addedOrChanged, removed
 }
 
-func (m *Service) InspectPeer(peerID string) *core.MeshInfo {
+func (m *Service) GetPeerMeshInfo(node core.PeerNode) *core.MeshInfo {
 	info := core.MeshInfo{
 		AdvertisedAddresses: make([]string, 0),
 		Connections:         nil,
 	}
 
-	targetPeerID, err := peer.Decode(peerID)
+	targetPeerID, err := peer.Decode(node.ID)
 	if err != nil {
 		return &info
 	}
@@ -340,7 +348,6 @@ func (m *Service) InspectPeer(peerID string) *core.MeshInfo {
 		for _, stream := range streams {
 			cd.Streams = append(cd.Streams, fmt.Sprintf("%s", stream.Protocol()))
 		}
-
 		info.Connections = append(info.Connections, cd)
 	}
 	return &info
@@ -350,9 +357,9 @@ func (m *Service) GetHost() host.Host {
 	return m.h
 }
 
-// Start the mesh service
-func (m *Service) Start() {
-	log.WithName("mesh").Infof("My PeerID: %s\n", m.ID)
+// Connect this service to the mesh
+func (m *Service) Connect() error {
+	log.WithName("mesh").Infof("My PeerNode: %s\n", m.node)
 
 	// FIXME: if the node visibility is forced public it will never see a circuit address
 	WaitForAddress(m.h, false)
@@ -361,6 +368,11 @@ func (m *Service) Start() {
 	go func() {
 		m.discovery.Serve(context.Background())
 	}()
+	return nil
+}
+
+func (m *Service) Disconnect() error {
+	return nil
 }
 
 func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, error) {
@@ -460,9 +472,15 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 		}
 	}
 
+	node := core.PeerNode{
+		ID:   host.ID().String(),
+		Name: mc.Name,
+	}
+
 	m := &Service{
-		Name:      mc.Name,
-		ID:        host.ID().String(),
+		//Name:      mc.Name,
+		//ID:        host.ID().String(),
+		node:      node,
 		h:         host,
 		admin:     admin,
 		relayInfo: relayInfo,
@@ -470,11 +488,8 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 		handler: func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not implemented", http.StatusNotImplemented)
 		},
-		config: mc,
-		discovery: NewDiscoveryManager(admin, host, &api.Node{
-			Name:   mc.Name,
-			PeerId: host.ID().String(),
-		}, mc.MDNSEnabled),
+		config:    mc,
+		discovery: NewDiscoveryManager(admin, host, node, mc.MDNSEnabled),
 	}
 
 	host.SetStreamHandler(OllamaProtocol, m.streamHandler)

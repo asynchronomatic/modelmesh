@@ -8,10 +8,14 @@ import (
 	"net/http"
 )
 
+type Doer interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
 type Transport interface {
-	Get(path string, v interface{}) error
-	Post(path string, v interface{}, r interface{}) error
-	Put(path string, v interface{}, r interface{}) error
+	Get(path string, v any) error
+	Post(path string, v any, r any) error
+	Put(path string, v any, r any) error
 	Delete(path string) error
 }
 
@@ -21,8 +25,8 @@ type Client struct {
 	Address string
 	token   string
 
-	httpClient *http.Client
-	opts       map[string]string
+	rt   Doer
+	opts map[string]string
 }
 
 func (c *Client) newRequest(method, location string, body io.Reader) (*http.Request, error) {
@@ -43,7 +47,7 @@ func (c *Client) setAuth(req *http.Request) {
 
 func (c *Client) Do(method, location string, in any, out any) error {
 	var err error
-	client := c.httpClient
+	client := c.rt
 
 	location = fmt.Sprintf("%s%s", c.Address, location)
 
@@ -89,15 +93,15 @@ func (c *Client) Delete(location string) error {
 	return c.Do(http.MethodDelete, location, nil, nil)
 }
 
-func (c *Client) Get(location string, v interface{}) error {
+func (c *Client) Get(location string, v any) error {
 	return c.Do(http.MethodGet, location, nil, v)
 }
 
-func (c *Client) Post(location string, in interface{}, out interface{}) error {
+func (c *Client) Post(location string, in any, out any) error {
 	return c.Do(http.MethodPost, location, in, out)
 }
 
-func (c *Client) Put(location string, in interface{}, out interface{}) error {
+func (c *Client) Put(location string, in any, out any) error {
 	return c.Do(http.MethodPut, location, in, out)
 }
 
@@ -114,17 +118,17 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) WithHttpClient(client *http.Client) *Client {
-	c.httpClient = client
+func (c *Client) WithDoer(rt Doer) *Client {
+	c.rt = rt
 	return c
 }
 
 func NewClient(address, token string) *Client {
 	c := &Client{
-		Address:    address,
-		token:      token,
-		opts:       make(map[string]string),
-		httpClient: &http.Client{},
+		Address: address,
+		token:   token,
+		opts:    make(map[string]string),
+		rt:      &http.Client{},
 	}
 
 	return c

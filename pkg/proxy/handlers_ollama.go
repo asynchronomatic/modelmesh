@@ -1,13 +1,6 @@
 package proxy
 
-import (
-	"encoding/json"
-	"net/http"
-
-	oapi "github.com/ollama/ollama/api"
-
-	"modelmesh/pkg/mesh"
-)
+/* DEPRECATE OLLAMA API
 
 // apiListProcessHandler implements the ollama /api/ps API endpoint
 // this simply returns the originally discovered ps information
@@ -39,3 +32,6 @@ func (p *Proxy) apiListTagsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+
+*/
