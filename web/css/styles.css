@@ -2455,6 +2455,16 @@ input:focus,
   color: var(--warn);
 }
 
+.badge-private {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge-shared {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
 /* ── Tables ──────────────────────────────────────────────────────────────── */
 
 .table-wrap {

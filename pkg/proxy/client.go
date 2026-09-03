@@ -27,21 +27,13 @@ func (c *MeshClient) GetModelsMesh() (map[string]ModelRoute, error) {
 		return nil, err
 	}
 
-	newTable := make(map[string]ModelRoute)
+	models := make(map[string]ModelRoute)
 
 	for _, m := range resp.Models {
-		cfg, ok := newTable[m.Name]
-		if !ok {
-			cfg = ModelRoute{}
-		}
-		cfg.Name = m.Name
-		cfg.Model = m.Model
-		//cfg.Properties = m.Properties
-		//cfg.Process = m.Process
-		newTable[cfg.Name] = cfg
+		models[m.Name] = m
 	}
 
-	return newTable, nil
+	return models, nil
 }
 
 type NodeStatus struct {

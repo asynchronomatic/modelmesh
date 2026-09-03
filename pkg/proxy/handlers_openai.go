@@ -12,6 +12,9 @@ type OpenaiModel struct {
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
 	OwnedBy string `json:"owned_by"`
+	// Extensions [ Grok, ]
+	ContextLength        int `json:"context_length"`
+	LongContextThreshold int `json:"long_context_threshold"`
 }
 
 type OpenaiModelList struct {

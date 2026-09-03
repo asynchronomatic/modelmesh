@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,11 +29,6 @@ const maxBody = 8 << 20 // 1 MiB
 const MeshModelPrefix = ""
 
 var proxyHandleURLS = []string{
-	// ollama ( these will be removed at some point in favor of just supporting the openai api as most tools use that )
-	// anyhow
-	"/api/chat",
-	"/api/embed",
-	"/api/generate",
 	// open ai
 	"/v1/chat/completions",
 	"/v1/responses",
@@ -188,14 +184,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cid := atomic.AddUint64(&p.cid, 1)
 	start := time.Now()
 
-	log.WithName("proxy").Eventf("%s -- (local:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Debugf("%s -- (local:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
 	switch r.URL.Path {
 	case "/api/chat", "/v1/chat/completions", "/v1/responses":
 		p.proxyModelRequest(w, r, false)
 	default: // serves from our local table
 		p.mux.ServeHTTP(w, r)
 	}
-	log.WithName("proxy").Eventf("%s %v (local:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Infof("%s %v (local:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
 }
 
 // MeshServeHTTP serves only our local models, it is used as an entry point for our p2p peers when they ask for
@@ -205,14 +201,14 @@ func (p *Proxy) MeshServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cid := atomic.AddUint64(&p.cid, 1)
 	start := time.Now()
 
-	log.WithName("proxy").Eventf("%s -- (mesh:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Debugf("%s -- (mesh:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
 	switch {
 	case slices.Contains(proxyHandleURLS, r.URL.Path): // pivots on model
 		p.proxyModelRequest(w, r, true)
 	default: // serves from our local table
 		p.mux.ServeHTTP(w, r)
 	}
-	log.WithName("proxy").Eventf("%s %v (mesh:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Infof("%s %v (mesh:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
 }
 
 func (p *Proxy) Serve(ctx context.Context) error {
@@ -231,13 +227,15 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	}
 	go func() {
 		err := svr.ListenAndServe()
-		if err != nil {
+		if err != nil && errors.Is(err, http.ErrServerClosed) {
 			log.WithName("proxy").Eventf("proxy Service Failed: %s", err)
 		}
+		log.WithName("proxy").Eventf("Proxy Service Exited")
 	}()
 
 	log.WithName("proxy").Eventf("Proxy Service Started")
 	<-ctx.Done()
+	log.WithName("proxy").Eventf("Proxy Service Shutting Down")
 	return svr.Shutdown(context.Background())
 }
 

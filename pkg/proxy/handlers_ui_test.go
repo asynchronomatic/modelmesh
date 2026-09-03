@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -53,20 +54,32 @@ func TestUIStaticAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
-	buf := make([]byte, 4096)
-	n, _ := res.Body.Read(buf)
-	body := string(buf[:n])
-	if !strings.Contains(body, "Mesh") || !strings.Contains(body, "Models") {
-		t.Fatalf("index missing Mesh/Models panels: %s", body)
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(bodyBytes)
+	for _, needle := range []string{"Mesh", "Models", "<th>Owner</th>", "<th>Context</th>", "<th>Visibility</th>", "<th>Capabilities</th>"} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("index missing %s", needle)
+		}
+	}
+	for _, old := range []string{"<th>Size</th>", "<th>Family</th>", "<th>Parameters</th>"} {
+		if strings.Contains(body, old) {
+			t.Fatalf("index still has old model column %s", old)
+		}
 	}
 }
 
 func TestUIModelsJSONShape(t *testing.T) {
 	resp := UIModelsResponse{
 		Models: []UIModel{{
-			Name:         "llama3.2:latest",
-			Model:        "llama3.2:latest",
-			Capabilities: []string{"completion", "tools", "vision"},
+			Name:          "llama3.2:latest",
+			Model:         "llama3.2:latest",
+			Private:       true,
+			Owner:         "alice",
+			ContextLength: 8192,
+			Capabilities:  []string{"completion", "tools", "vision"},
 			Providers: []UIModelProvider{{
 				Name:   "local",
 				PeerID: "12D3KooWtest",
@@ -79,9 +92,36 @@ func TestUIModelsJSONShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, needle := range []string{`"models"`, `"providers"`, `"peer_id"`, `"self":true`, `"capabilities"`, `"completion"`, `"vision"`} {
+	for _, needle := range []string{
+		`"models"`, `"providers"`, `"peer_id"`, `"self":true`,
+		`"capabilities"`, `"completion"`, `"vision"`,
+		`"private":true`, `"owner":"alice"`, `"context_length":8192`,
+	} {
 		if !strings.Contains(s, needle) {
 			t.Fatalf("missing %s in %s", needle, s)
+		}
+	}
+	for _, old := range []string{`"digest"`, `"parameter_size"`, `"quantization"`, `"size_vram"`, `"loaded"`} {
+		if strings.Contains(s, old) {
+			t.Fatalf("unexpected legacy field %s in %s", old, s)
+		}
+	}
+}
+
+func TestAppJSUsesNewUIModelFields(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(webDir(), "js", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, needle := range []string{"m.private", "m.owner", "m.context_length", "badge-private", "badge-shared"} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("app.js missing %s", needle)
+		}
+	}
+	for _, old := range []string{"m.loaded", "m.parameter_size", "m.size_vram", "m.digest", "formatBytes", "m.family", "m.quantization"} {
+		if strings.Contains(s, old) {
+			t.Fatalf("app.js still uses legacy UIModel field %s", old)
 		}
 	}
 }

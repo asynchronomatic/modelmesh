@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"golang.org/x/exp/maps"
 
@@ -49,25 +50,32 @@ func (e *ModelRouter) modelsFromWhitelist(provider *core.Provider) map[string]Mo
 	modelTable := make(map[string]ModelRoute)
 
 	for _, m := range provider.Models {
-		cfg, ok := modelTable[m.Model]
+		route, ok := modelTable[m.Model]
 		if !ok {
-			cfg = MakeRoute(m.Model, m.Model, m.Capabilities)
+			route = MakeRoute(m.Model, m.Model, m.Capabilities)
 		}
 
-		cfg.providers = append(cfg.providers, ModelProvider{
+		route.ModifiedAt = time.Now()
+		route.Owner = ""
+		route.providers = append(route.providers, ModelProvider{
 			Private:  m.Private,
 			Provider: provider.Type,
 			BaseURL:  provider.BaseURL,
 			Token:    provider.Token,
 		})
-		modelTable[m.Model] = cfg
+		modelTable[m.Model] = route
 	}
 	return modelTable
 }
 
 func (e *ModelRouter) ollamaFetchModels(provider *core.Provider) (map[string]ModelRoute, error) {
-
 	models := make(map[string]ModelRoute)
+
+	/*
+		whitelist := make(map[string]ModelRoute)
+		if provider.Discovery == "whitelist" {
+			whitelist = e.modelsFromWhitelist(provider)
+		}*/
 
 	u, err := url.Parse(provider.BaseURL)
 	if err != nil {
@@ -88,6 +96,7 @@ func (e *ModelRouter) ollamaFetchModels(provider *core.Provider) (map[string]Mod
 		properties[m.Name] = m
 	}
 
+	// this is wrong whitelist should control whether the model is added or not
 	if provider.Discovery == "whitelist" {
 		models = e.modelsFromWhitelist(provider)
 	} else {
@@ -97,18 +106,22 @@ func (e *ModelRouter) ollamaFetchModels(provider *core.Provider) (map[string]Mod
 		}
 
 		for _, m := range running.Models {
-			cfg, ok := models[m.Model]
+			route, ok := models[m.Model]
 			if !ok {
-				cfg = MakeRoute(m.Model, m.Model, []string{})
+				route = MakeRoute(m.Model, m.Model, []string{})
+				route.Owner = "ollama"
 			}
 
-			cfg.providers = append(cfg.providers, ModelProvider{
+			route.providers = append(route.providers, ModelProvider{
 				Private:  provider.Private,
 				Provider: provider.Type,
 				BaseURL:  provider.BaseURL,
 				Token:    provider.Token,
 			})
-			models[m.Model] = cfg
+			route.Owner = "ollama"
+			route.ModifiedAt = time.Now()
+			route.ContextLength = m.Details.ContextLength
+			models[m.Model] = route
 		}
 	}
 
@@ -120,12 +133,14 @@ func (e *ModelRouter) ollamaFetchModels(provider *core.Provider) (map[string]Mod
 		}
 
 		m := models[k]
+		if m.ContextLength == 0 {
+			m.ContextLength = p.Details.ContextLength
+		}
+
 		for _, c := range p.Capabilities {
 			m.Capabilities = append(m.Capabilities, string(c))
 		}
-
-		m.ContextLength = p.Details.ContextLength
-
+		models[k] = m
 	}
 
 	return models, nil
@@ -134,26 +149,39 @@ func (e *ModelRouter) ollamaFetchModels(provider *core.Provider) (map[string]Mod
 func (e *ModelRouter) openaiFetchModels(provider *core.Provider) (map[string]ModelRoute, error) {
 	client := jsonclient.NewClient(provider.BaseURL, provider.Token)
 
+	whitelist := make(map[string]ModelRoute)
+	if provider.Discovery == "whitelist" {
+		whitelist = e.modelsFromWhitelist(provider)
+	}
+
 	resp := OpenaiModelList{}
-	err := client.Get("/models", &resp)
+	err := client.Get("/v1/models", &resp)
 	if err != nil {
 		return nil, err
 	}
 
 	models := make(map[string]ModelRoute)
-
 	for _, m := range resp.Data {
-		cfg, ok := models[m.ID]
+		w, ok := whitelist[m.ID]
 		if !ok {
-			cfg = MakeRoute(m.ID, m.ID, []string{})
+			continue
 		}
-		cfg.providers = append(cfg.providers, ModelProvider{
-			Private:  false,
+
+		route, ok := models[m.ID]
+		if !ok {
+			route = MakeRoute(m.ID, m.ID, []string{})
+			route.ContextLength = m.ContextLength
+			route.Capabilities = w.Capabilities
+		}
+		route.providers = append(route.providers, ModelProvider{
+			Private:  provider.Private,
 			Provider: provider.Type,
 			BaseURL:  provider.BaseURL,
 			Token:    provider.Token,
 		})
-		models[m.ID] = cfg
+		route.Owner = m.OwnedBy
+		route.ModifiedAt = time.Unix(m.Created, 0)
+		models[m.ID] = route
 	}
 	return models, nil
 }
@@ -175,8 +203,10 @@ func (e *ModelRouter) AddPeerModels(node core.PeerNode, models map[string]ModelR
 	defer e.lock.Unlock()
 
 	for name := range models {
+
 		route, ok := e.MeshModels[node.ID]
 		if !ok {
+			log.Debugf("adding peer model %s: %+v", name, models[name])
 			route = models[name]
 		}
 
