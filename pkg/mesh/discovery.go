@@ -14,7 +14,7 @@ import (
 )
 
 type DiscoveryManager struct {
-	admin       *api.Client
+	admin       *api.MeshClient
 	h           host.Host
 	node        core.PeerNode
 	string      map[peer.ID]struct{}
@@ -205,7 +205,7 @@ func (d *DiscoveryManager) Serve(ctx context.Context) error {
 	return nil
 }
 
-func NewDiscoveryManager(a *api.Client, h host.Host, node core.PeerNode, MDNSEnabled bool) *DiscoveryManager {
+func NewDiscoveryManager(a *api.MeshClient, h host.Host, node core.PeerNode, MDNSEnabled bool) *DiscoveryManager {
 	return &DiscoveryManager{
 		admin:       a,
 		h:           h,

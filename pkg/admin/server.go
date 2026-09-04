@@ -2,15 +2,15 @@ package admin
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
+	"modelmesh/pkg/admin/auth"
+	"modelmesh/pkg/admin/magiclink"
 	"modelmesh/pkg/log"
 
 	"modelmesh/api"
@@ -34,6 +34,11 @@ type Server struct {
 	logicalTime  uint64
 	nodes        map[string]*NodeReference
 	acl          *AllowList
+
+	auth auth.Provider
+
+	baseUrl  string
+	magicKey magiclink.EncryptionKey
 }
 
 func OutboundIP() (string, error) {
@@ -50,31 +55,25 @@ func OutboundIP() (string, error) {
 	return udpAddr.IP.String(), nil
 }
 
-func (s *Server) authenticate(r *http.Request) (string, bool) {
-	auth := r.Header.Get("Authorization")
-	const prefix = "bearer "
-	if len(auth) > len(prefix) && strings.EqualFold(auth[:len(prefix)], prefix) {
-		token := strings.TrimSpace(auth[len(prefix):])
-
-		if subtle.ConstantTimeCompare([]byte(token), []byte(s.adminKey)) != 1 {
-			return "", false
+// only allow the admin user in
+func (s *Server) requireAdmin(fn func(*JsonRPC) error) func(*JsonRPC) error {
+	return func(ctx *JsonRPC) error {
+		if ctx.Group() != "admin" {
+			return api.NewError(http.StatusUnauthorized, "not authorized")
 		}
-		return "mesh", true
+		return fn(ctx)
 	}
-	return "", false
 }
 
 func (s *Server) handle(fn func(*JsonRPC) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		user := "--"
 		defer func() {
-			s.logRequest(r, user, start)
+			s.logRequest(r, "--", start)
 		}()
 
-		if u, ok := s.authenticate(r); ok {
-			user = u
-		} else {
+		user, code := s.auth.DoAuth(w, r)
+		if code != http.StatusOK {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -98,6 +97,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/nodes/{id}", s.handle(s.apiNodeUnregister))
 	mux.HandleFunc("POST /api/v1/nodes/{id}", s.handle(s.apiNodeRefresh))
 	mux.HandleFunc("GET /api/v1/nodes", s.handle(s.apiNodeList))
+
+	mux.HandleFunc("POST /api/v1/admin/invite", s.handle(s.requireAdmin(s.adminCreateInviteLink)))
+
 	mux.HandleFunc("/", notFoundHandler)
 	return mux
 }
@@ -178,16 +180,35 @@ func (s *Server) Wait(ctx context.Context) error {
 	}
 }
 
+func (s *Server) WithBaseUrl(baseUrl string) {
+	s.baseUrl = baseUrl
+}
+
+func (s *Server) GetBaseUrl() string {
+	return s.baseUrl
+}
+
 func NewServer(listenAddress, adminKey string) (*Server, error) {
 	log.Printf("Build Version: %s\n", BuildVersion)
 
+	magicKey, err := magiclink.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+
 	acl, _ := NewAllowList("allow.list")
+
+	a := auth.NewTokenAuth()
+	a.AddUser("admin", "admin", adminKey)
+	//a.AddUser("mesh", "mesh", userKey)
 
 	s := &Server{
 		mainAddress: listenAddress,
 		adminKey:    adminKey,
 		nodes:       make(map[string]*NodeReference),
 		acl:         acl,
+		auth:        a,
+		magicKey:    magicKey,
 	}
 
 	return s, nil

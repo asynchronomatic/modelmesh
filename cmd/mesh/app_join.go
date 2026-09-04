@@ -9,9 +9,7 @@ import (
 	"charm.land/huh/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"modelmesh/api"
 	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
 	"modelmesh/pkg/mesh"
 )
 
@@ -87,20 +85,34 @@ func runJoin() error {
 	adminAddress = strings.TrimSpace(adminAddress)
 	adminSecret = strings.TrimSpace(adminSecret)
 
-	client, err := api.NewClient(adminAddress, adminSecret)
-	if err != nil {
-		return fmt.Errorf("admin client: %w", err)
-	}
+	/*
+		client, err := api.NewClient(adminAddress, adminSecret)
+		if err != nil {
+			return fmt.Errorf("admin client: %w", err)
+		}
 
-	addrs, err := client.GetAddress()
-	if err != nil {
-		return fmt.Errorf("could not reach admin at %s (check address and secret): %w", adminAddress, err)
-	}
+		addrs, err := client.GetAddress()
+		if err != nil {
+			return fmt.Errorf("could not reach admin at %s (check address and secret): %w", adminAddress, err)
+		}
 
-	if err := writeJoinConfig(defaultConfigPath, adminAddress, adminSecret); err != nil {
-		return fmt.Errorf("update %s: %w", defaultConfigPath, err)
-	}
-	log.Infof("updated %s\n", defaultConfigPath)
+		if err := writeJoinConfig(defaultConfigPath, adminAddress, adminSecret); err != nil {
+			return fmt.Errorf("update %s: %w", defaultConfigPath, err)
+		}
+		log.Infof("updated %s\n", defaultConfigPath)
+
+		key, err := mesh.LoadOrCreateKey(defaultNodeKeyPath)
+		if err != nil {
+			return fmt.Errorf("node key: %w", err)
+		}
+		id, err := peer.IDFromPrivateKey(key)
+		if err != nil {
+			return fmt.Errorf("peer id: %w", err)
+		}
+
+		if err := client.Authorize(id.String()); err != nil {
+			return fmt.Errorf("authorize %s: %w", id, err)
+		}*/
 
 	key, err := mesh.LoadOrCreateKey(defaultNodeKeyPath)
 	if err != nil {
@@ -111,20 +123,17 @@ func runJoin() error {
 		return fmt.Errorf("peer id: %w", err)
 	}
 
-	if err := client.Authorize(id.String()); err != nil {
-		return fmt.Errorf("authorize %s: %w", id, err)
-	}
-
 	fmt.Println()
 	fmt.Println("Joined mesh.")
 	fmt.Printf("  admin:    %s\n", adminAddress)
 	fmt.Printf("  peer id:  %s\n", id)
-	if len(addrs) > 0 {
-		fmt.Println("  relays:")
-		for _, a := range addrs {
-			fmt.Printf("    %s\n", a)
-		}
-	}
+	/*
+		if len(addrs) > 0 {
+			fmt.Println("  relays:")
+			for _, a := range addrs {
+				fmt.Printf("    %s\n", a)
+			}
+		}*/
 	fmt.Println()
 	fmt.Println("Next:")
 	fmt.Println("  mesh proxy    # start the local proxy on this mesh")
