@@ -2,7 +2,7 @@
   const POLL_MS = 5000;
 
   const state = {
-    view: "mesh",
+    view: "welcome",
     members: [],
     models: [],
     filter: "",
@@ -43,6 +43,11 @@
     chatPrivacy: document.getElementById("chat-privacy"),
     settingsYaml: document.getElementById("settings-yaml"),
     settingsSubtitle: document.getElementById("settings-subtitle"),
+    welcomeOpenai: document.getElementById("welcome-openai-url"),
+    welcomeModels: document.getElementById("welcome-models-url"),
+    welcomeChat: document.getElementById("welcome-chat-url"),
+    welcomeCurl: document.getElementById("welcome-curl"),
+    welcomeLocalNote: document.getElementById("welcome-local-note"),
   };
 
   function setStatus(kind, label) {
@@ -156,9 +161,37 @@
     };
   }
 
+  function selfMember() {
+    return state.members.find((m) => m.Type === "self") || null;
+  }
+
+  function providerID(p) {
+    return (p && p.ID) || "";
+  }
+
+  function providerName(p) {
+    if (!p) return "";
+    return p.Name || shortID(providerID(p));
+  }
+
+  function providerIsSelf(p) {
+    const self = selfMember();
+    const id = providerID(p);
+    return !!(self && id && self.PeerID === id);
+  }
+
+  function sortedProviders(list) {
+    return [...(list || [])].sort((a, b) => {
+      const as = providerIsSelf(a);
+      const bs = providerIsSelf(b);
+      if (as !== bs) return as ? -1 : 1;
+      return providerName(a).localeCompare(providerName(b));
+    });
+  }
+
   function modelsForPeer(peerID) {
     return state.models.filter((m) =>
-      (m.providers || []).some((p) => p.peer_id === peerID)
+      (m.providers || []).some((p) => providerID(p) === peerID)
     );
   }
 
@@ -467,12 +500,12 @@
   }
 
   function modelExpandHTML(m) {
-    const providers = (m.providers || [])
+    const providers = sortedProviders(m.providers)
       .map((p) => {
         return `<div class="node-detail-model">
-          <span class="node-detail-model-name">${escapeHTML(p.name)}</span>
-          <span class="node-detail-model-meta mono">${escapeHTML(p.peer_id)}</span>
-          ${p.self ? `<span class="badge badge-online">this node</span>` : ""}
+          <span class="node-detail-model-name">${escapeHTML(providerName(p))}</span>
+          <span class="node-detail-model-meta mono">${escapeHTML(providerID(p))}</span>
+          ${providerIsSelf(p) ? `<span class="badge badge-online">this node</span>` : ""}
         </div>`;
       })
       .join("") || `<div class="empty">No providers.</div>`;
@@ -524,7 +557,7 @@
         m.private ? "private" : "shared",
         m.context_length,
         ...modelCapabilities(m),
-        ...(m.providers || []).map((p) => `${p.name} ${p.peer_id}`),
+        ...(m.providers || []).map((p) => `${providerName(p)} ${providerID(p)}`),
       ]
         .join(" ")
         .toLowerCase();
@@ -547,11 +580,11 @@
       .map((m) => {
         const key = modelName(m);
         const expanded = state.expandedModel === key;
-        const providers = (m.providers || [])
+        const providers = sortedProviders(m.providers)
           .map((p) => {
-            const cls = p.self ? "node-chip is-self" : "node-chip";
-            const title = escapeHTML(p.peer_id);
-            return `<span class="${cls}" title="${title}">${escapeHTML(p.name)}</span>`;
+            const cls = providerIsSelf(p) ? "node-chip is-self" : "node-chip";
+            const title = escapeHTML(providerID(p));
+            return `<span class="${cls}" title="${title}">${escapeHTML(providerName(p))}</span>`;
           })
           .join("");
         const caps = modelCapabilities(m);
@@ -647,7 +680,7 @@
 
   function modelOnThisNode(name) {
     const m = findModel(name);
-    return !!(m && (m.providers || []).some((p) => p.self));
+    return !!(m && (m.providers || []).some((p) => providerIsSelf(p)));
   }
 
   function chatModelValue(name) {
@@ -667,7 +700,7 @@
     }
     const m = findModel(name);
     const hosts = (m && m.providers ? m.providers : [])
-      .map((p) => p.name)
+      .map((p) => providerName(p))
       .filter(Boolean);
     const where = hosts.length ? hosts.join(", ") : "another mesh node";
     box.hidden = false;
@@ -873,6 +906,47 @@
     el.chatInput.focus();
   }
 
+  function proxyOrigin() {
+    return window.location.origin;
+  }
+
+  function isLocalHost(host) {
+    const h = String(host || "").toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
+  }
+
+  function renderWelcome() {
+    const origin = proxyOrigin();
+    const base = origin + "/v1";
+    if (el.welcomeOpenai) el.welcomeOpenai.textContent = base;
+    if (el.welcomeModels) el.welcomeModels.textContent = origin + "/v1/models";
+    if (el.welcomeChat) el.welcomeChat.textContent = origin + "/v1/chat/completions";
+    if (el.welcomeCurl) {
+      el.welcomeCurl.textContent = `curl ${origin}/v1/models`;
+    }
+    if (el.welcomeLocalNote) {
+      const local = isLocalHost(window.location.hostname);
+      el.welcomeLocalNote.hidden = !local;
+      el.welcomeLocalNote.classList.toggle("hidden", !local);
+    }
+  }
+
+  async function copyWelcomeURL(targetId, btn) {
+    const node = document.getElementById(targetId);
+    const text = node ? node.textContent.trim() : "";
+    if (!text) return;
+    const label = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = "Copied";
+    } catch (_) {
+      btn.textContent = "Copy failed";
+    }
+    setTimeout(() => {
+      btn.textContent = label;
+    }, 1200);
+  }
+
   async function renderSettings() {
     if (!el.settingsYaml) return;
     try {
@@ -887,7 +961,8 @@
   }
 
   function render() {
-    if (state.view === "mesh") renderMesh();
+    if (state.view === "welcome") renderWelcome();
+    else if (state.view === "mesh") renderMesh();
     else if (state.view === "nodes") renderNodes();
     else if (state.view === "models") renderModels();
     else if (state.view === "chat") syncChatModels();
@@ -934,6 +1009,11 @@
 
   document.querySelectorAll(".sidebar-item").forEach((btn) => {
     btn.addEventListener("click", () => showView(btn.dataset.view));
+  });
+  document.getElementById("view-welcome").addEventListener("click", (e) => {
+    const btn = e.target.closest(".welcome-copy");
+    if (!btn) return;
+    copyWelcomeURL(btn.getAttribute("data-copy-target"), btn);
   });
   document.getElementById("btn-refresh").addEventListener("click", () => {
     setStatus("loading", "Refreshing");
@@ -1018,6 +1098,7 @@
     });
   }
 
+  renderWelcome();
   renderChatThread();
   updateChatControls();
   refresh();

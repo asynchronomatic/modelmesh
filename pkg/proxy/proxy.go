@@ -21,6 +21,7 @@ import (
 
 	"modelmesh/pkg/log"
 	"modelmesh/pkg/proxy/modeldex"
+	"modelmesh/pkg/proxy/socket"
 
 	"modelmesh/pkg/core"
 )
@@ -55,6 +56,7 @@ type Proxy struct {
 	//meshRoutesOAI map[string]*ModelRoute // contains all models discovered in the mesh
 	//localRoutes map[string]*ModelRoute // contain the mapping of a model to a ollama server configured to this node
 
+	notifier    *socket.Notifier
 	modelRouter *modeldex.ModelRouter
 }
 
@@ -252,6 +254,7 @@ func NewProxy(meshService core.MeshServiceProvider, listen string, providers []c
 		mux:         http.NewServeMux(),
 		mesh:        meshService,
 		modelRouter: modelRouter,
+		notifier:    socket.NewNotifier(),
 	}
 
 	// OLLAMA Specific APIs

@@ -59,7 +59,7 @@ func TestUIStaticAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(bodyBytes)
-	for _, needle := range []string{"Mesh", "Models", "<th>Owner</th>", "<th>Context</th>", "<th>Visibility</th>", "<th>Capabilities</th>"} {
+	for _, needle := range []string{"Welcome", "OpenAI endpoint", "/v1", "Open WebUI", "Mesh", "Models", "<th>Owner</th>", "<th>Context</th>", "<th>Visibility</th>", "<th>Capabilities</th>"} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("index missing %s", needle)
 		}
@@ -81,9 +81,8 @@ func TestUIModelsJSONShape(t *testing.T) {
 			ContextLength: 8192,
 			Capabilities:  []string{"completion", "tools", "vision"},
 			Providers: []UIModelProvider{{
-				Name:   "local",
-				PeerID: "12D3KooWtest",
-				Self:   true,
+				Name: "local",
+				ID:   "12D3KooWtest",
 			}},
 		}},
 	}
@@ -93,7 +92,7 @@ func TestUIModelsJSONShape(t *testing.T) {
 	}
 	s := string(b)
 	for _, needle := range []string{
-		`"models"`, `"providers"`, `"peer_id"`, `"self":true`,
+		`"models"`, `"providers"`, `"ID":"12D3KooWtest"`, `"Name":"local"`,
 		`"capabilities"`, `"completion"`, `"vision"`,
 		`"private":true`, `"owner":"alice"`, `"context_length":8192`,
 	} {
@@ -101,7 +100,7 @@ func TestUIModelsJSONShape(t *testing.T) {
 			t.Fatalf("missing %s in %s", needle, s)
 		}
 	}
-	for _, old := range []string{`"digest"`, `"parameter_size"`, `"quantization"`, `"size_vram"`, `"loaded"`} {
+	for _, old := range []string{`"digest"`, `"parameter_size"`, `"quantization"`, `"size_vram"`, `"loaded"`, `"peer_id"`, `"self"`} {
 		if strings.Contains(s, old) {
 			t.Fatalf("unexpected legacy field %s in %s", old, s)
 		}
@@ -114,12 +113,12 @@ func TestAppJSUsesNewUIModelFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, needle := range []string{"m.private", "m.owner", "m.context_length", "badge-private", "badge-shared"} {
+	for _, needle := range []string{"m.private", "m.owner", "m.context_length", "badge-private", "badge-shared", "providerID", "providerName", "providerIsSelf"} {
 		if !strings.Contains(s, needle) {
 			t.Fatalf("app.js missing %s", needle)
 		}
 	}
-	for _, old := range []string{"m.loaded", "m.parameter_size", "m.size_vram", "m.digest", "formatBytes", "m.family", "m.quantization"} {
+	for _, old := range []string{"m.loaded", "m.parameter_size", "m.size_vram", "m.digest", "formatBytes", "m.family", "m.quantization", "p.peer_id", "p.self"} {
 		if strings.Contains(s, old) {
 			t.Fatalf("app.js still uses legacy UIModel field %s", old)
 		}

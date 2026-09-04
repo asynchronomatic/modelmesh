@@ -5472,6 +5472,131 @@ input[type="date"]:focus {
   tab-size: 2;
 }
 
+#view-welcome.view.active {
+  overflow: auto;
+}
+
+.welcome-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+  max-width: 720px;
+}
+
+#view-welcome .welcome-card {
+  margin-bottom: 0;
+}
+
+#view-welcome .welcome-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+#view-welcome .welcome-card p {
+  max-width: none;
+}
+
+.endpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.endpoint-row code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--accent);
+  word-break: break-all;
+}
+
+.welcome-hint {
+  margin: 12px 0 0 !important;
+  font-size: 0.82rem !important;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.welcome-hint code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  color: var(--text);
+}
+
+.welcome-steps {
+  margin: 12px 0 0;
+  padding-left: 1.25em;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.welcome-steps li + li {
+  margin-top: 8px;
+}
+
+.welcome-steps code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+
+.endpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.endpoint-item {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.endpoint-item .label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.endpoint-item code {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.welcome-snippet {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  overflow: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .dashboard .app-body .main {
   max-width: none;
   margin: 0;
@@ -6229,6 +6354,19 @@ input[type="date"]:focus {
 }
 
 @media (max-width: 720px) {
+  .endpoint-row {
+    flex-wrap: wrap;
+  }
+
+  .endpoint-row .btn {
+    width: 100%;
+  }
+
+  .endpoint-item {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
   .app-body {
     flex-direction: column;
   }
