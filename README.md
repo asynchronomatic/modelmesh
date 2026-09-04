@@ -55,20 +55,22 @@ From the repo root (so `config.example.yaml` and `web/` resolve):
 ```bash
 go mod download
 
+make build
+
 # First machine (or any new checkout)
-go run ./cmd/mesh init
+/build/mesh init
 
 # Join an existing mesh (prompts for admin URL + secret, updates config.yaml)
-go run ./cmd/mesh join
+/build/mesh join
 
 # Member: proxy local Ollama onto the mesh
-go run ./cmd/mesh proxy
+/build/mesh proxy
 
 # Public host: membership API + circuit relay
-go run ./cmd/mesh admin
+/build/mesh admin
 
 # Single host: admin + relay + proxy
-go run ./cmd/mesh proxy+admin
+/build/mesh hybrid
 ```
 
 Makefile equivalents: `make run-proxy`, `make run-admin`, `make run-hybrid`.

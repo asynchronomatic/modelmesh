@@ -22,5 +22,9 @@ build-all:
 	GOARCH=arm64 GOOS=darwin  go build -o build/mesh.darwin.arm64 modelmesh/cmd/mesh
 .PHONY: build-all
 
+test:
+	go test -v modelmesh/...
+.PHONY: test
+
 -include Makefile.local
 

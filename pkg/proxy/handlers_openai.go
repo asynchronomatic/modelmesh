@@ -5,19 +5,12 @@ import (
 	"net/http"
 
 	"modelmesh/pkg/mesh"
+	"modelmesh/pkg/proxy/modeldex"
 )
 
-type OpenaiModel struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	OwnedBy string `json:"owned_by"`
-}
-
-type OpenaiModelList struct {
-	Object string        `json:"object"`
-	Data   []OpenaiModel `json:"data"`
-}
+// FIXME: alias until we restructure the code a bit
+type OpenaiModel = modeldex.OpenaiModel
+type OpenaiModelList = modeldex.OpenaiModelList
 
 func (p *Proxy) openaiListModelsHandler(w http.ResponseWriter, r *http.Request) {
 	if mesh.IsSource(r) {
@@ -29,24 +22,13 @@ func (p *Proxy) openaiListModelsHandler(w http.ResponseWriter, r *http.Request) 
 		Object: "list",
 	}
 
-	for _, model := range p.meshRoutes {
+	for _, model := range p.modelRouter.ListMeshModels() {
 		resp.Data = append(resp.Data, OpenaiModel{
-			ID:      model.Name,
-			Object:  "model",
-			Created: model.Properties.ModifiedAt.Unix(),
+			ID:     model.Name,
+			Object: "model",
+			//Created: model.Properties.ModifiedAt.Unix(),
 			OwnedBy: "ollama",
 		})
-	}
-
-	if MeshModelPrefix != "" {
-		for _, model := range p.meshRoutes {
-			resp.Data = append(resp.Data, OpenaiModel{
-				ID:      MeshModelPrefix + model.Name,
-				Object:  "model",
-				Created: model.Properties.ModifiedAt.Unix(),
-				OwnedBy: "ollama",
-			})
-		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

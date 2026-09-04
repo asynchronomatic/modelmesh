@@ -12,14 +12,21 @@ var DefaultRelayPort = 4001
 var DefaultAdminPort = 4002
 var DefaultProxyListen = ":8080"
 
+type ModelConfig struct {
+	Model        string
+	Private      bool
+	Capabilities []string
+	Tools        []string // any builtin tools
+}
+
 type Provider struct {
 	ID        string
-	Type      string
-	BaseURL   string `yaml:"base_url"`
+	Type      string `yaml:"type"`     // Provider name (ollama, openai, etc)
+	BaseURL   string `yaml:"base_url"` // BaseURL contains the API endpoint for the given provider
+	Token     string `yaml:"token"`    // Token or access key used to access the api
+	Private   bool   `yaml:"private"`  // Private indicates that this provider should not be exposed to the mesh
 	Discovery string `yaml:"model_discovery"`
-	Models    []struct {
-		ID string
-	}
+	Models    []ModelConfig
 }
 
 type EnabledModel struct {

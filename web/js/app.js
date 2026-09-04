@@ -2,7 +2,7 @@
   const POLL_MS = 5000;
 
   const state = {
-    view: "mesh",
+    view: "welcome",
     members: [],
     models: [],
     filter: "",
@@ -43,6 +43,11 @@
     chatPrivacy: document.getElementById("chat-privacy"),
     settingsYaml: document.getElementById("settings-yaml"),
     settingsSubtitle: document.getElementById("settings-subtitle"),
+    welcomeOpenai: document.getElementById("welcome-openai-url"),
+    welcomeModels: document.getElementById("welcome-models-url"),
+    welcomeChat: document.getElementById("welcome-chat-url"),
+    welcomeCurl: document.getElementById("welcome-curl"),
+    welcomeLocalNote: document.getElementById("welcome-local-note"),
   };
 
   function setStatus(kind, label) {
@@ -73,18 +78,27 @@
     return id.slice(0, 6) + "…" + id.slice(-4);
   }
 
-  function formatBytes(n) {
+  function modelName(m) {
+    return (m && (m.name || m.model)) || "";
+  }
+
+  function formatContext(n) {
     const v = Number(n) || 0;
-    if (v <= 0) return "—";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    let i = 0;
-    let x = v;
-    while (x >= 1024 && i < units.length - 1) {
-      x /= 1024;
-      i++;
-    }
-    const digits = x >= 10 || i === 0 ? 0 : 1;
-    return `${x.toFixed(digits)} ${units[i]}`;
+    if (v <= 0) return "N/A";
+    return v.toLocaleString();
+  }
+
+  function formatModified(m) {
+    const t = m && m.modified_at;
+    if (!t || t === "0001-01-01T00:00:00Z") return "";
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
+  }
+
+  function visibilityBadge(m) {
+    return m && m.private
+      ? `<span class="badge badge-private">private</span>`
+      : `<span class="badge badge-shared">shared</span>`;
   }
 
   function memberName(m) {
@@ -147,9 +161,37 @@
     };
   }
 
+  function selfMember() {
+    return state.members.find((m) => m.Type === "self") || null;
+  }
+
+  function providerID(p) {
+    return (p && p.ID) || "";
+  }
+
+  function providerName(p) {
+    if (!p) return "";
+    return p.Name || shortID(providerID(p));
+  }
+
+  function providerIsSelf(p) {
+    const self = selfMember();
+    const id = providerID(p);
+    return !!(self && id && self.PeerID === id);
+  }
+
+  function sortedProviders(list) {
+    return [...(list || [])].sort((a, b) => {
+      const as = providerIsSelf(a);
+      const bs = providerIsSelf(b);
+      if (as !== bs) return as ? -1 : 1;
+      return providerName(a).localeCompare(providerName(b));
+    });
+  }
+
   function modelsForPeer(peerID) {
     return state.models.filter((m) =>
-      (m.providers || []).some((p) => p.peer_id === peerID)
+      (m.providers || []).some((p) => providerID(p) === peerID)
     );
   }
 
@@ -179,13 +221,12 @@
     const modelRows = models.length
       ? models
           .map((m) => {
-            const status = m.loaded
-              ? `<span class="badge badge-running">loaded</span>`
-              : `<span class="badge">idle</span>`;
+            const name = modelName(m);
+            const meta = m.owner || formatContext(m.context_length);
             return `<div class="node-detail-model">
-              <span class="node-detail-model-name" title="${escapeHTML(m.name || m.model)}">${escapeHTML(m.name || m.model)}</span>
-              <span class="node-detail-model-meta">${formatBytes(m.size)}</span>
-              ${status}
+              <span class="node-detail-model-name" title="${escapeHTML(name)}">${escapeHTML(name)}</span>
+              <span class="node-detail-model-meta">${escapeHTML(meta === "N/A" ? "" : meta)}</span>
+              ${visibilityBadge(m)}
             </div>`;
           })
           .join("")
@@ -310,13 +351,12 @@
     const modelList = models.length
       ? models
           .map((m) => {
-            const status = m.loaded
-              ? `<span class="badge badge-running">loaded</span>`
-              : `<span class="badge">idle</span>`;
+            const name = modelName(m);
+            const meta = m.owner || formatContext(m.context_length);
             return `<div class="node-detail-model">
-              <span class="node-detail-model-name">${escapeHTML(m.name || m.model)}</span>
-              <span class="node-detail-model-meta">${formatBytes(m.size)}</span>
-              ${status}
+              <span class="node-detail-model-name">${escapeHTML(name)}</span>
+              <span class="node-detail-model-meta">${escapeHTML(meta === "N/A" ? "" : meta)}</span>
+              ${visibilityBadge(m)}
             </div>`;
           })
           .join("")
@@ -372,7 +412,7 @@
     const members = sortedMembers().filter((m) => {
       if (!q) return true;
       const models = modelsForPeer(m.PeerID)
-        .map((model) => model.name || model.model)
+        .map((model) => modelName(model))
         .join(" ");
       return `${memberName(m)} ${m.PeerID} ${m.Type || ""} ${models}`.toLowerCase().includes(q);
     });
@@ -400,7 +440,7 @@
           : `<span class="badge badge-offline">unreachable</span>`;
         const modelChips = models.length
           ? models
-              .map((model) => `<span class="node-chip">${escapeHTML(model.name || model.model)}</span>`)
+              .map((model) => `<span class="node-chip">${escapeHTML(modelName(model))}</span>`)
               .join("")
           : "—";
         return `<tr class="clickable-row node-row${expanded ? " is-expanded" : ""}" data-peer-id="${escapeHTML(m.PeerID)}">
@@ -460,46 +500,39 @@
   }
 
   function modelExpandHTML(m) {
-    const providers = (m.providers || [])
+    const providers = sortedProviders(m.providers)
       .map((p) => {
-        const cls = p.self ? "node-chip is-self" : "node-chip";
         return `<div class="node-detail-model">
-          <span class="node-detail-model-name">${escapeHTML(p.name)}</span>
-          <span class="node-detail-model-meta mono">${escapeHTML(p.peer_id)}</span>
-          ${p.self ? `<span class="badge badge-online">this node</span>` : ""}
+          <span class="node-detail-model-name">${escapeHTML(providerName(p))}</span>
+          <span class="node-detail-model-meta mono">${escapeHTML(providerID(p))}</span>
+          ${providerIsSelf(p) ? `<span class="badge badge-online">this node</span>` : ""}
         </div>`;
       })
       .join("") || `<div class="empty">No providers.</div>`;
 
-    const modified = m.modified_at && m.modified_at !== "0001-01-01T00:00:00Z"
-      ? escapeHTML(new Date(m.modified_at).toLocaleString())
-      : "";
-    const families = (m.families || []).filter(Boolean).join(", ");
     const specs = [
-      detailKV("Family", escapeHTML(m.family || "")),
-      detailKV("Families", escapeHTML(families)),
-      detailKV("Parameters", escapeHTML(m.parameter_size || "")),
-      detailKV("Quantization", escapeHTML(m.quantization || "")),
-      detailKV("Format", escapeHTML(m.format || "")),
-      detailKV("Parent", escapeHTML(m.parent_model || "")),
-      detailKV("Context", m.context_length ? escapeHTML(String(m.context_length)) : ""),
-      detailKV("Size", formatBytes(m.size)),
-      detailKV("VRAM", m.loaded && m.size_vram ? formatBytes(m.size_vram) : ""),
-      detailKV("Modified", modified),
+      detailKV("Owner", escapeHTML(m.owner || "")),
+      detailKV("Context", escapeHTML(formatContext(m.context_length))),
+      detailKV("Modified", escapeHTML(formatModified(m))),
+      detailKV("Visibility", m.private ? "Private" : "Shared"),
     ].join("");
     const caps = modelCapabilities(m);
+    const alias =
+      m.model && m.name && m.model !== m.name
+        ? `<p class="node-expand-id">${escapeHTML(m.model)}</p>`
+        : "";
 
     return `<div class="node-expand">
       <div class="node-expand-section">
         <h4>Identity</h4>
-        <p class="node-expand-id">${escapeHTML(m.name || m.model)}</p>
+        <p class="node-expand-id">${escapeHTML(modelName(m))}</p>
+        ${alias}
         <div class="node-detail-meta">
-          ${m.loaded ? `<span class="badge badge-running">loaded</span>` : `<span class="badge">idle</span>`}
+          ${visibilityBadge(m)}
         </div>
-        <p class="node-expand-id">${escapeHTML(m.digest || "—")}</p>
       </div>
       <div class="node-expand-section">
-        <h4>Specs</h4>
+        <h4>Details</h4>
         <div class="model-spec-grid">${specs || `<div class="empty">No extra details.</div>`}</div>
       </div>
       <div class="node-expand-section node-expand-full">
@@ -520,11 +553,11 @@
       const hay = [
         m.name,
         m.model,
-        m.family,
-        m.parameter_size,
-        m.digest,
+        m.owner,
+        m.private ? "private" : "shared",
+        m.context_length,
         ...modelCapabilities(m),
-        ...(m.providers || []).map((p) => `${p.name} ${p.peer_id}`),
+        ...(m.providers || []).map((p) => `${providerName(p)} ${providerID(p)}`),
       ]
         .join(" ")
         .toLowerCase();
@@ -533,7 +566,7 @@
 
     el.modelsCount.textContent = String(state.models.length);
 
-    if (state.expandedModel && !state.models.some((m) => (m.name || m.model) === state.expandedModel)) {
+    if (state.expandedModel && !state.models.some((m) => modelName(m) === state.expandedModel)) {
       state.expandedModel = null;
     }
 
@@ -545,29 +578,35 @@
 
     el.modelsBody.innerHTML = rows
       .map((m) => {
-        const key = m.name || m.model;
+        const key = modelName(m);
         const expanded = state.expandedModel === key;
-        const providers = (m.providers || [])
+        const providers = sortedProviders(m.providers)
           .map((p) => {
-            const cls = p.self ? "node-chip is-self" : "node-chip";
-            const title = escapeHTML(p.peer_id);
-            return `<span class="${cls}" title="${title}">${escapeHTML(p.name)}</span>`;
+            const cls = providerIsSelf(p) ? "node-chip is-self" : "node-chip";
+            const title = escapeHTML(providerID(p));
+            return `<span class="${cls}" title="${title}">${escapeHTML(providerName(p))}</span>`;
           })
           .join("");
-        const status = m.loaded
-          ? `<span class="badge badge-running">loaded</span>`
-          : `<span class="badge">idle</span>`;
-        const family = [m.family, m.quantization].filter(Boolean).join(" · ") || "—";
+        const caps = modelCapabilities(m);
+        const capCell = caps.length
+          ? `<div class="node-chip-row">${caps
+              .map((c) => `<span class="model-cap-chip">${escapeHTML(formatCapability(c))}</span>`)
+              .join("")}</div>`
+          : "—";
+        const alias =
+          m.model && m.name && m.model !== m.name
+            ? `<div class="mono muted">${escapeHTML(m.model)}</div>`
+            : "";
         return `<tr class="clickable-row node-row${expanded ? " is-expanded" : ""}" data-model-name="${escapeHTML(key)}">
           <td>
-            <div class="cell-name"><span class="node-chevron">▾</span> ${escapeHTML(m.name || m.model)}</div>
-            <div class="mono muted">${escapeHTML(shortID(m.digest))}</div>
+            <div class="cell-name"><span class="node-chevron">▾</span> ${escapeHTML(key)}</div>
+            ${alias}
           </td>
-          <td class="mono">${formatBytes(m.size)}</td>
-          <td>${escapeHTML(family)}</td>
-          <td class="mono">${escapeHTML(m.parameter_size || "—")}</td>
+          <td>${escapeHTML(m.owner || "—")}</td>
+          <td class="mono">${escapeHTML(formatContext(m.context_length))}</td>
+          <td>${visibilityBadge(m)}</td>
           <td><div class="node-chip-row">${providers || "—"}</div></td>
-          <td>${status}</td>
+          <td>${capCell}</td>
         </tr>
         ${expanded ? `<tr class="node-expand-row"><td colspan="6">${modelExpandHTML(m)}</td></tr>` : ""}`;
       })
@@ -576,7 +615,7 @@
 
   function modelNames() {
     return state.models
-      .map((m) => m.name || m.model)
+      .map((m) => modelName(m))
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
   }
@@ -636,12 +675,12 @@
 
   function findModel(name) {
     const bare = bareModelName(name);
-    return state.models.find((m) => (m.name || m.model) === bare);
+    return state.models.find((m) => modelName(m) === bare);
   }
 
   function modelOnThisNode(name) {
     const m = findModel(name);
-    return !!(m && (m.providers || []).some((p) => p.self));
+    return !!(m && (m.providers || []).some((p) => providerIsSelf(p)));
   }
 
   function chatModelValue(name) {
@@ -661,7 +700,7 @@
     }
     const m = findModel(name);
     const hosts = (m && m.providers ? m.providers : [])
-      .map((p) => p.name)
+      .map((p) => providerName(p))
       .filter(Boolean);
     const where = hosts.length ? hosts.join(", ") : "another mesh node";
     box.hidden = false;
@@ -677,7 +716,9 @@
       ? names
           .map((n) => {
             const value = chatModelValue(n);
-            return `<option value="${escapeHTML(value)}">${escapeHTML(value)}</option>`;
+            const m = findModel(n);
+            const label = m && m.private ? `${value} (private)` : value;
+            return `<option value="${escapeHTML(value)}">${escapeHTML(label)}</option>`;
           })
           .join("")
       : `<option value="">No models available</option>`;
@@ -865,6 +906,47 @@
     el.chatInput.focus();
   }
 
+  function proxyOrigin() {
+    return window.location.origin;
+  }
+
+  function isLocalHost(host) {
+    const h = String(host || "").toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
+  }
+
+  function renderWelcome() {
+    const origin = proxyOrigin();
+    const base = origin + "/v1";
+    if (el.welcomeOpenai) el.welcomeOpenai.textContent = base;
+    if (el.welcomeModels) el.welcomeModels.textContent = origin + "/v1/models";
+    if (el.welcomeChat) el.welcomeChat.textContent = origin + "/v1/chat/completions";
+    if (el.welcomeCurl) {
+      el.welcomeCurl.textContent = `curl ${origin}/v1/models`;
+    }
+    if (el.welcomeLocalNote) {
+      const local = isLocalHost(window.location.hostname);
+      el.welcomeLocalNote.hidden = !local;
+      el.welcomeLocalNote.classList.toggle("hidden", !local);
+    }
+  }
+
+  async function copyWelcomeURL(targetId, btn) {
+    const node = document.getElementById(targetId);
+    const text = node ? node.textContent.trim() : "";
+    if (!text) return;
+    const label = btn.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = "Copied";
+    } catch (_) {
+      btn.textContent = "Copy failed";
+    }
+    setTimeout(() => {
+      btn.textContent = label;
+    }, 1200);
+  }
+
   async function renderSettings() {
     if (!el.settingsYaml) return;
     try {
@@ -879,7 +961,8 @@
   }
 
   function render() {
-    if (state.view === "mesh") renderMesh();
+    if (state.view === "welcome") renderWelcome();
+    else if (state.view === "mesh") renderMesh();
     else if (state.view === "nodes") renderNodes();
     else if (state.view === "models") renderModels();
     else if (state.view === "chat") syncChatModels();
@@ -926,6 +1009,11 @@
 
   document.querySelectorAll(".sidebar-item").forEach((btn) => {
     btn.addEventListener("click", () => showView(btn.dataset.view));
+  });
+  document.getElementById("view-welcome").addEventListener("click", (e) => {
+    const btn = e.target.closest(".welcome-copy");
+    if (!btn) return;
+    copyWelcomeURL(btn.getAttribute("data-copy-target"), btn);
   });
   document.getElementById("btn-refresh").addEventListener("click", () => {
     setStatus("loading", "Refreshing");
@@ -1010,6 +1098,7 @@
     });
   }
 
+  renderWelcome();
   renderChatThread();
   updateChatControls();
   refresh();

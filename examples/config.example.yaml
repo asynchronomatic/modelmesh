@@ -44,18 +44,26 @@ mesh:
 providers:
   # id: logical id of this instance (display only) must be unique
   - id: ollama-10
-    # type: always ollama for now
+    # type: always test | ollama | openai ( note openai models are ony exposed through the open ai proxy port )
+    #   "test" presents a fake provider for testing
     type: ollama
+    # private: controls if the provider and its models are exported to the mesh
+    private: false
     # base_url: the base url of your ollama instance
     #  typically if running on the same node as ollama its http://127.0.0.1:11434 , but can be any ollam instance that allows
     #  remote network access ( See ollama config option OLLAMA_HOST=0.0.0.0:11434 )
     base_url: "http://127.0.0.1:11434"
+    # token: access key if it is required (typical for openai compatible inference providers )  ollama does not use a token/access key
+    token:
     # model_discovery: Note currenly only pinned works
     #     pinned - only export models that are currently loaded on the ollam instance (ie do not load a model, prevents model load thrashing)
     #                ( See ollama config option OLLAMA_KEEP_ALIVE=-1 )
     #        all - not supported (in the future it will report all models ollama has downloaded)
     #  whitelist - not supported (in the future only report the models listed under models:
     model_discovery: pinned
-    # models: contains a white list ot models to export (not supported yet )
+    # models: contains a whitelist of models to export, this is used instead of discovery  when model_discovery is set to "whitelist"
     models:
-
+      - model: nemotron-3-super:latest
+        private: false
+      - model: qwen3.8:latest
+        private: true

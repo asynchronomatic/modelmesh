@@ -24,11 +24,11 @@ func (s *Server) apiNodeAuthorize(ctx *JsonRPC) error {
 	if err := ctx.GetObject(&req); err != nil {
 		return api.NewError(http.StatusBadRequest, err.Error())
 	}
-	if req.Node.PeerId == "" {
+	if req.Node.ID == "" {
 		return api.NewError(http.StatusBadRequest, "node peer id is required")
 	}
 
-	s.acl.Add(req.Node.PeerId)
+	s.acl.Add(req.Node.ID)
 	return ctx.ReplyObject(&req.Node)
 }
 
@@ -41,11 +41,11 @@ func (s *Server) apiNodeRegister(ctx *JsonRPC) error {
 	if req.Node.Name == "" {
 		return api.NewError(http.StatusBadRequest, "node name is required")
 	}
-	if req.Node.PeerId == "" {
+	if req.Node.ID == "" {
 		return api.NewError(http.StatusBadRequest, "node peer id is required")
 	}
 
-	if !s.acl.Has(req.Node.PeerId) {
+	if !s.acl.Has(req.Node.ID) {
 		return api.NewError(http.StatusBadRequest, "node not Authorized")
 	}
 
@@ -63,13 +63,13 @@ func (s *Server) apiNodeRegister(ctx *JsonRPC) error {
 		LogicalTime: s.logicalTime,
 	}
 
-	s.nodes[req.Node.PeerId] = &NodeReference{
+	s.nodes[req.Node.ID] = &NodeReference{
 		Node:     req.Node,
 		LastPing: time.Now(),
 		Token:    resp.Token,
 	}
 	s.lock.Unlock()
-	log.Infof("registered node %s", resp.Node.PeerId)
+	log.Infof("registered node %s", resp.Node.ID)
 
 	return ctx.ReplyObject(&resp)
 }
@@ -85,7 +85,7 @@ func (s *Server) apiNodeRefresh(ctx *JsonRPC) error {
 		return api.NewError(http.StatusBadRequest, err.Error())
 	}
 
-	if req.Node.PeerId != id {
+	if req.Node.ID != id {
 		return api.NewError(http.StatusBadRequest, "node id mismatch")
 	}
 

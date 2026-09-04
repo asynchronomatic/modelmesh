@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/ollama/ollama/api"
+
+	"modelmesh/pkg/core"
 )
 
 type ExportedModel struct {
@@ -13,12 +15,7 @@ type ExportedModel struct {
 	Process    api.ProcessModelResponse
 }
 
-type Node struct {
-	Name        string
-	PeerId      string
-	LogicalTime uint64
-	LastUpdate  time.Time
-}
+type Node = core.PeerNode
 
 type RegisterNodeRequest struct {
 	Node        Node

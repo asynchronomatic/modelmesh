@@ -30,7 +30,7 @@ func (r *Registration) Refresh() (bool, uint64, error) {
 	resp := RegisterNodeResponse{}
 
 	// refreshes the node
-	err := r.transport.Post(fmt.Sprintf("/api/v1/nodes/%s", r.node.PeerId), &req, &resp)
+	err := r.transport.Post(fmt.Sprintf("/api/v1/nodes/%s", r.node.ID), &req, &resp)
 	if err != nil {
 		if strings.Contains(err.Error(), "409") {
 			return false, 0, nil
@@ -75,7 +75,7 @@ func (c *Client) GetAddress() ([]string, error) {
 func (c *Client) Authorize(id string) error {
 	req := RegisterNodeRequest{
 		Node: Node{
-			PeerId: id,
+			ID: id,
 		},
 	}
 
@@ -86,8 +86,8 @@ func (c *Client) Authorize(id string) error {
 func (c *Client) Register(name string, id string) (*Registration, error) {
 	req := RegisterNodeRequest{
 		Node: Node{
-			Name:   name,
-			PeerId: id,
+			Name: name,
+			ID:   id,
 		},
 	}
 

@@ -28,9 +28,24 @@ func RunInterruptible(services ...Service) error {
 		wg.Go(func() {
 			err := service.Serve(ctx)
 			if err != nil {
-				log.Errorf("Could not initialize admin server. Err:%v\n", err)
+				log.Errorf("service %T exited. Err:%v\n", err)
 			}
 			cancel()
+		})
+	}
+	wg.Wait()
+	return nil
+}
+
+func RunInterruptibleContext(ctx context.Context, services ...Service) error {
+	var wg sync.WaitGroup
+
+	for _, service := range services {
+		wg.Go(func() {
+			err := service.Serve(ctx)
+			if err != nil {
+				log.Errorf("Could not initialize admin server. Err:%v\n", err)
+			}
 		})
 
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,9 +20,10 @@ import (
 	"github.com/sethvargo/go-retry"
 
 	"modelmesh/pkg/log"
+	"modelmesh/pkg/proxy/modeldex"
+	"modelmesh/pkg/proxy/socket"
 
 	"modelmesh/pkg/core"
-	"modelmesh/pkg/mesh"
 )
 
 const maxBody = 8 << 20 // 1 MiB
@@ -29,10 +31,6 @@ const maxBody = 8 << 20 // 1 MiB
 const MeshModelPrefix = ""
 
 var proxyHandleURLS = []string{
-	// ollama
-	"/api/chat",
-	"/api/embed",
-	"/api/generate",
 	// open ai
 	"/v1/chat/completions",
 	"/v1/responses",
@@ -51,45 +49,15 @@ type Proxy struct {
 
 	mux     *http.ServeMux
 	meshMux *http.ServeMux // handler for requests coming in via the mesh if we want something different
-	mesh    *mesh.Service
+	mesh    core.MeshServiceProvider
 
-	lock       sync.RWMutex
-	meshRoutes map[string]*ModelRoute // contains all models discovered in the mesh
+	lock sync.RWMutex
+	//meshRoutes map[string]*ModelRoute // contains all models discovered in the mesh
 	//meshRoutesOAI map[string]*ModelRoute // contains all models discovered in the mesh
-	localRoutes map[string]*ModelRoute // contain the mapping of a model to a ollama server configured to this node
-}
+	//localRoutes map[string]*ModelRoute // contain the mapping of a model to a ollama server configured to this node
 
-func (p *Proxy) getLocalModelRoute(model string) string {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	route, ok := p.localRoutes[model]
-	if !ok {
-		return ""
-	}
-
-	for k := range route.Servers {
-		return k
-	}
-	return ""
-}
-
-func (p *Proxy) getMeshModelRoute(model string) string {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
-
-	router, ok := p.meshRoutes[model]
-	if !ok {
-		return ""
-	}
-
-	for peerId := range router.Servers {
-		if peerId == p.mesh.ID {
-			continue
-		}
-		return peerId
-	}
-	return ""
+	notifier    *socket.Notifier
+	modelRouter *modeldex.ModelRouter
 }
 
 func (p *Proxy) peekModel(body []byte) string {
@@ -120,15 +88,22 @@ func (p *Proxy) proxyModelRequest(w http.ResponseWriter, r *http.Request, noRela
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 
+	route := p.modelRouter.GetModelRoute(model)
+	if route == nil {
+		http.Error(w, "model not found", http.StatusNotFound)
+		return
+	}
+
 	// Always try local routes first
-	route := p.getLocalModelRoute(model)
-	if route != "" {
-		u, err := url.Parse(route)
+	local := route.GetLocalRoute()
+	if local != nil {
+		log.Debugf(" -- Servicing via ollama node: %s\n", local.BaseURL)
+
+		u, err := url.Parse(local.BaseURL)
 		if err != nil {
 			http.Error(w, "model not found", http.StatusNotFound)
 			return
 		}
-		log.Debugf(" -- Servicing via ollama node: %s\n", route)
 
 		proxy := httputil.NewSingleHostReverseProxy(u)
 		orig := proxy.Director
@@ -136,6 +111,9 @@ func (p *Proxy) proxyModelRequest(w http.ResponseWriter, r *http.Request, noRela
 			orig(req)
 			req.Host = u.Host
 			req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
+			if local.Token != "" {
+				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", local.Token))
+			}
 		}
 		proxy.ServeHTTP(w, r)
 		return
@@ -149,48 +127,41 @@ func (p *Proxy) proxyModelRequest(w http.ResponseWriter, r *http.Request, noRela
 		return
 	}
 
-	route = p.getMeshModelRoute(model)
-	if route == "" {
+	destNode := route.GetMeshPeerRoute()
+	if destNode == nil {
 		log.Debugf(" -- No model available, returning 404")
 		http.Error(w, "no model available", http.StatusNotFound)
 		return
 	}
 
-	log.Debugf(" -- Servicing via mesh node: %s\n", route)
-	p.mesh.ProxyToNode(route, w, r)
+	log.Debugf(" -- Servicing via mesh node: %s\n", destNode)
+	p.mesh.ProxyToNode(*destNode, w, r)
 	return
 }
 
 // OnPeerUpdate handles the addition or removal of a peer and updates the meshRoutes accordingly.
 // It fetches model information from peers on addition and merges it into the local model state.
 // Returns an error if the model fetch from a peer fails.
-func (p *Proxy) OnPeerUpdate(peerID string, remove bool) error {
-	log.Eventf("ollama.proxy.OnPeerUpdate:%s [Remove:%t]\n", peerID, remove)
+func (p *Proxy) OnPeerUpdate(peer core.PeerNode, remove bool) error {
+	log.Eventf("ollama.proxy.OnPeerUpdate: %s [Remove:%t]\n", peer, remove)
 	// fetch models from peer
 	if remove {
-		p.lock.Lock()
-		for _, model := range p.meshRoutes {
-			_, ok := model.Servers[peerID]
-			if ok {
-				log.Debugf("Peer Remove Model: %s/%s\n", peerID, model.Name)
-			}
-		}
-		p.lock.Unlock()
+		p.modelRouter.RemovePeer(peer)
 		return nil
 	}
 
 	// Peers that registered at the same time are often not dialable yet
 	// (circuit reservation / swarm backoff). Retry before giving up;
 	// discovery will try again on the next poll if this still fails.
-	client := NewClient(peerID, p.mesh.ClientForPeer(peerID))
+	client := NewMeshClient(peer.Name, p.mesh.ClientForPeer(peer, true))
 
-	var models map[string]*ModelRoute
+	var models map[string]modeldex.ModelRoute
 	err := retry.Do(context.Background(), retry.WithMaxRetries(3, retry.NewFibonacci(2*time.Second)),
 		func(ctx context.Context) error {
 			var err error
 			models, err = client.GetModelsMesh()
 			if err != nil {
-				log.Warnf("error fetching models from peer %s: %s; retrying", peerID, err)
+				log.Warnf("error fetching models from peer %s: %s; retrying", peer.ID, err)
 				return retry.RetryableError(err)
 			}
 			return nil
@@ -202,24 +173,9 @@ func (p *Proxy) OnPeerUpdate(peerID string, remove bool) error {
 	}
 
 	// merge models into out model state
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	log.WithName("proxy").Eventf("Adding peer models %+v", models)
+	p.modelRouter.AddPeerModels(peer, models)
 
-	for _, model := range models {
-		log.Debugf(" -- ollama model: %s/%s\n", peerID, model.Name)
-		route, ok := p.meshRoutes[model.Name]
-		if !ok {
-			route = &ModelRoute{
-				Name:       model.Name,
-				Model:      model.Model,
-				Process:    model.Process,    // these should be synthesized
-				Properties: model.Properties, // these should be synthesized
-				Servers:    make(map[string]string),
-			}
-			p.meshRoutes[model.Name] = route
-		}
-		route.Servers[peerID] = peerID
-	}
 	return nil
 }
 
@@ -231,14 +187,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cid := atomic.AddUint64(&p.cid, 1)
 	start := time.Now()
 
-	log.WithName("proxy").Eventf("%s -- (local:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Debugf("%s -- (local:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
 	switch r.URL.Path {
 	case "/api/chat", "/v1/chat/completions", "/v1/responses":
 		p.proxyModelRequest(w, r, false)
 	default: // serves from our local table
 		p.mux.ServeHTTP(w, r)
 	}
-	log.WithName("proxy").Eventf("%s %v (local:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Infof("%s %v (local:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
 }
 
 // MeshServeHTTP serves only our local models, it is used as an entry point for our p2p peers when they ask for
@@ -248,18 +204,21 @@ func (p *Proxy) MeshServeHTTP(w http.ResponseWriter, r *http.Request) {
 	cid := atomic.AddUint64(&p.cid, 1)
 	start := time.Now()
 
-	log.WithName("proxy").Eventf("%s -- (mesh:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Debugf("%s -- (mesh:%d) %s %s\n", r.RemoteAddr, cid, r.Method, r.URL.Path)
 	switch {
 	case slices.Contains(proxyHandleURLS, r.URL.Path): // pivots on model
 		p.proxyModelRequest(w, r, true)
 	default: // serves from our local table
 		p.mux.ServeHTTP(w, r)
 	}
-	log.WithName("proxy").Eventf("%s %v (mesh:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
+	log.WithName("proxy").Infof("%s %v (mesh:%d) %s %s\n", r.RemoteAddr, time.Now().Sub(start).Round(time.Second), cid, r.Method, r.URL.Path)
 }
 
 func (p *Proxy) Serve(ctx context.Context) error {
-	p.mesh.Start()
+	err := p.mesh.Connect()
+	if err != nil {
+		return err
+	}
 
 	svr := http.Server{
 		Handler: p,
@@ -271,59 +230,49 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	}
 	go func() {
 		err := svr.ListenAndServe()
-		if err != nil {
+		if err != nil && errors.Is(err, http.ErrServerClosed) {
 			log.WithName("proxy").Eventf("proxy Service Failed: %s", err)
 		}
+		log.WithName("proxy").Eventf("Proxy Service Exited")
 	}()
 
 	log.WithName("proxy").Eventf("Proxy Service Started")
 	<-ctx.Done()
+	log.WithName("proxy").Eventf("Proxy Service Shutting Down")
 	return svr.Shutdown(context.Background())
 }
 
 // NewProxy creates a local proxy that routes ollama requests based on model name to a specific
 // endpoint on the network
-func NewProxy(meshService *mesh.Service, listen string, providers []core.Provider) (*Proxy, error) {
+func NewProxy(meshService core.MeshServiceProvider, listen string, providers []core.Provider) (*Proxy, error) {
+
+	modelRouter := modeldex.NewModelDiscovery(meshService.Node(), providers)
+	modelRouter.Refresh()
+
 	p := &Proxy{
 		listen:      listen,
 		mux:         http.NewServeMux(),
-		meshRoutes:  make(map[string]*ModelRoute),
 		mesh:        meshService,
-		localRoutes: make(map[string]*ModelRoute),
-	}
-
-	// Loads providers
-	exports := NewModelExporter(providers)
-	exports.Refresh()
-	models := exports.List()
-
-	// initialize our local models
-	for idx := range models {
-		localModel := models[idx]
-
-		p.localRoutes[localModel.Model] = &localModel
-
-		meshModel := models[idx]
-		meshModel.Servers = map[string]string{meshService.ID: meshService.ID}
-		p.meshRoutes[meshModel.Model] = &meshModel
+		modelRouter: modelRouter,
+		notifier:    socket.NewNotifier(),
 	}
 
 	// OLLAMA Specific APIs
-	p.mux.HandleFunc("GET /api/ps", p.apiListProcessHandler)
-	p.mux.HandleFunc("GET /api/tags", p.apiListTagsHandler)
+	//p.mux.HandleFunc("GET /api/ps", p.apiListProcessHandler)
+	//p.mux.HandleFunc("GET /api/tags", p.apiListTagsHandler)
 
 	// OpenAI APIs
 	p.mux.HandleFunc("GET /v1/models", p.openaiListModelsHandler)
 
 	// Notes to AI: .mesh endpoints are only to be used by PEER to PEER requests.  Fo UI the /api/mesh/ endpoints
-	p.mux.HandleFunc("GET /.mesh/status", p.apiMeshStatus)
-	p.mux.HandleFunc("GET /.mesh/members", p.apiMeshMembers)
-	p.mux.HandleFunc("GET /.mesh/models", p.apiMeshModels)
+	p.mux.HandleFunc("GET /.mesh/status", p.meshStatus)
+	p.mux.HandleFunc("GET /.mesh/members", p.meshMembers)
+	p.mux.HandleFunc("GET /.mesh/models", p.meshModels)
 
 	// /api/mesh/... are the api endpoints that can be used by UIs/clients
-	p.mux.HandleFunc("GET /api/mesh/models", p.apiUIModelsHandler)
-	p.mux.HandleFunc("GET /api/mesh/members", p.apiMeshMembers)
-	p.mux.HandleFunc("GET /api/mesh/config", p.apiUIConfigHandler)
+	p.mux.HandleFunc("GET /api/mesh/models", p.uiModelsHandler)
+	p.mux.HandleFunc("GET /api/mesh/members", p.meshMembers)
+	p.mux.HandleFunc("GET /api/mesh/config", p.uiConfigHandler)
 
 	p.mux.HandleFunc("GET /{$}", p.uiRootHandler)
 	p.mux.HandleFunc("GET /ui", p.uiHandler)
@@ -335,8 +284,8 @@ func NewProxy(meshService *mesh.Service, listen string, providers []core.Provide
 		fmt.Fprint(w, "Custom 404: The page you are looking for does not exist.")
 	})
 
-	p.mesh.Handler(p.MeshServeHTTP)
-	p.mesh.Discovery().UpdateHandler(p.OnPeerUpdate)
+	p.mesh.WithHandlerFunc(p.MeshServeHTTP)
+	p.mesh.WithUpdateHandlerFunc(p.OnPeerUpdate)
 
 	return p, nil
 }

@@ -11,33 +11,22 @@ import (
 
 	"github.com/ollama/ollama/types/model"
 
+	"modelmesh/pkg/core"
 	"modelmesh/pkg/log"
 	"modelmesh/web"
 )
 
-type UIModelProvider struct {
-	Name   string `json:"name"`
-	PeerID string `json:"peer_id"`
-	Self   bool   `json:"self"`
-}
+type UIModelProvider = core.PeerNode
 
 type UIModel struct {
-	Name         string            `json:"name"`
-	Model        string            `json:"model"`
-	Size         int64             `json:"size"`
-	Digest       string            `json:"digest"`
-	Family       string            `json:"family"`
-	Families     []string          `json:"families,omitempty"`
-	Params       string            `json:"parameter_size"`
-	Quant        string            `json:"quantization"`
-	Format       string            `json:"format"`
-	Parent       string            `json:"parent_model"`
-	Context      int               `json:"context_length"`
-	VRAM         int64             `json:"size_vram"`
-	ModifiedAt   time.Time         `json:"modified_at"`
-	Loaded       bool              `json:"loaded"`
-	Capabilities []string          `json:"capabilities,omitempty"`
-	Providers    []UIModelProvider `json:"providers"`
+	Name          string            `json:"name"`
+	Model         string            `json:"model"`
+	Private       bool              `json:"private"`
+	Owner         string            `json:"owner"`
+	ModifiedAt    time.Time         `json:"modified_at"`
+	ContextLength int               `json:"context_length"`
+	Capabilities  []string          `json:"capabilities,omitempty"`
+	Providers     []UIModelProvider `json:"providers"`
 }
 
 func capabilityStrings(caps []model.Capability) []string {
@@ -115,7 +104,7 @@ type UIConfigResponse struct {
 	Content string `json:"content"`
 }
 
-func (p *Proxy) apiUIConfigHandler(w http.ResponseWriter, r *http.Request) {
+func (p *Proxy) uiConfigHandler(w http.ResponseWriter, r *http.Request) {
 	path := "config.yaml"
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -129,58 +118,29 @@ func (p *Proxy) apiUIConfigHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (p *Proxy) apiUIModelsHandler(w http.ResponseWriter, r *http.Request) {
-	peers, _ := p.mesh.GetPeerMap()
+func (p *Proxy) uiModelsHandler(w http.ResponseWriter, r *http.Request) {
+	//peers, _ := p.mesh.GetPeerMap()
 
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 
+	models := p.modelRouter.ListMeshModels()
+
 	resp := UIModelsResponse{
-		Models: make([]UIModel, 0, len(p.meshRoutes)),
+		Models: make([]UIModel, 0, len(models)),
 	}
 
-	for _, route := range p.meshRoutes {
-		ctxLen := route.Properties.Details.ContextLength
-		if ctxLen == 0 {
-			ctxLen = route.Process.ContextLength
-		}
+	for _, route := range models {
 		m := UIModel{
-			Name:         route.Name,
-			Model:        route.Model,
-			Size:         route.Properties.Size,
-			Digest:       route.Properties.Digest,
-			Family:       route.Properties.Details.Family,
-			Families:     route.Properties.Details.Families,
-			Params:       route.Properties.Details.ParameterSize,
-			Quant:        route.Properties.Details.QuantizationLevel,
-			Format:       route.Properties.Details.Format,
-			Parent:       route.Properties.Details.ParentModel,
-			Context:      ctxLen,
-			VRAM:         route.Process.SizeVRAM,
-			ModifiedAt:   route.Properties.ModifiedAt,
-			Loaded:       route.Process.Name != "",
-			Capabilities: capabilityStrings(route.Properties.Capabilities),
-			Providers:    make([]UIModelProvider, 0, len(route.Servers)),
+			Name:          route.Name,
+			Model:         route.Model,
+			Private:       route.IsPrivate(),
+			ContextLength: route.ContextLength,
+			ModifiedAt:    route.ModifiedAt,
+			Owner:         route.Owner,
+			Capabilities:  route.Capabilities,
+			Providers:     route.GetPeers(),
 		}
-		for peerID := range route.Servers {
-			name := shortPeer(peerID)
-			if peerID == p.mesh.ID && p.mesh.Name != "" {
-				name = p.mesh.Name
-			} else if n, ok := peers[peerID]; ok && n.Name != "" {
-				name = n.Name
-			}
-			m.Providers = append(m.Providers, UIModelProvider{
-				Name:   name,
-				PeerID: peerID,
-				Self:   peerID == p.mesh.ID,
-			})
-		}
-		sort.Slice(m.Providers, func(i, j int) bool {
-			if m.Providers[i].Self != m.Providers[j].Self {
-				return m.Providers[i].Self
-			}
-			return m.Providers[i].Name < m.Providers[j].Name
-		})
 		resp.Models = append(resp.Models, m)
 	}
 
