@@ -15,6 +15,7 @@ func TestAdminRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	ts := httptest.NewServer(s.routes())
 	t.Cleanup(ts.Close)
 
@@ -44,6 +45,7 @@ func TestAdminBearerAuthAndRegister(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	ts := httptest.NewServer(s.routes())
 	t.Cleanup(ts.Close)
 

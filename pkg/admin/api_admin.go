@@ -60,7 +60,7 @@ func (s *Server) adminCreateInviteLink(ctx *JsonRPC) error {
 
 	resp := api.CreateInviteResponse{
 		InviteId:   "",
-		InviteLink: fmt.Sprintf("%s/invite/%s", magicValue),
+		InviteLink: fmt.Sprintf("%s/invite/%s", s.baseUrl, magicValue),
 	}
 	return ctx.ReplyObject(&resp)
 }

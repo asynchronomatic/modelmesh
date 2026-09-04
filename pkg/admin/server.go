@@ -11,6 +11,7 @@ import (
 
 	"modelmesh/pkg/admin/auth"
 	"modelmesh/pkg/admin/magiclink"
+	"modelmesh/pkg/jsonkv"
 	"modelmesh/pkg/log"
 
 	"modelmesh/api"
@@ -34,6 +35,7 @@ type Server struct {
 	logicalTime  uint64
 	nodes        map[string]*NodeReference
 	acl          *AllowList
+	kv           *jsonkv.Store
 
 	auth auth.Provider
 
@@ -132,17 +134,27 @@ func (s *Server) Serve(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.httpServer.Shutdown(shutdownCtx)
-		return <-errCh
+		err := <-errCh
+		_ = s.Close()
+		return err
 	case err := <-errCh:
 		if err != nil {
 			log.Errorf("error serving admin: %s", err)
 		}
+		_ = s.Close()
 		return err
 	}
 }
 
 func (s *Server) GetAllowList() *AllowList {
 	return s.acl
+}
+
+func (s *Server) Close() error {
+	if s == nil {
+		return nil
+	}
+	return s.kv.Close()
 }
 
 func (s *Server) WithRelayAddresses(advertiseAddresses []string) {
@@ -198,6 +210,11 @@ func NewServer(listenAddress, adminKey string) (*Server, error) {
 
 	acl, _ := NewAllowList("allow.list")
 
+	kv, err := jsonkv.Open("admin.jkv")
+	if err != nil {
+		return nil, err
+	}
+
 	a := auth.NewTokenAuth()
 	a.AddUser("admin", "admin", adminKey)
 	//a.AddUser("mesh", "mesh", userKey)
@@ -207,6 +224,7 @@ func NewServer(listenAddress, adminKey string) (*Server, error) {
 		adminKey:    adminKey,
 		nodes:       make(map[string]*NodeReference),
 		acl:         acl,
+		kv:          kv,
 		auth:        a,
 		magicKey:    magicKey,
 	}
