@@ -2,6 +2,7 @@
 
 build:
 	go build -tags assert -o build/mesh modelmesh/cmd/mesh
+	go build -tags assert -o build/admincli modelmesh/cmd/admincli
 .PHONY: build
 
 build-all:
@@ -12,7 +13,8 @@ build-all:
 .PHONY: build-all
 
 run-admin:
-	go run modelmesh/cmd/mesh admin
+	export ADMIN_DB_PATH="tests/admin.kjv"
+	ADMIN_DB_PATH="tests/admin.kjv" go run modelmesh/cmd/mesh admin
 .PHONY: run-admin
 
 run-proxy:

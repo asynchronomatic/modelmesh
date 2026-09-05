@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,7 +60,7 @@ func OutboundIP() (string, error) {
 }
 
 // only allow the admin user in
-func (s *Server) requireAdmin(fn func(*JsonRPC) error) func(*JsonRPC) error {
+func (s *Server) asAdmin(fn func(*JsonRPC) error) func(*JsonRPC) error {
 	return func(ctx *JsonRPC) error {
 		if ctx.Group() != "admin" {
 			return api.NewError(http.StatusUnauthorized, "not authorized")
@@ -68,6 +70,24 @@ func (s *Server) requireAdmin(fn func(*JsonRPC) error) func(*JsonRPC) error {
 }
 
 func (s *Server) handle(fn func(*JsonRPC) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		defer func() {
+			s.logRequest(r, "--", start)
+		}()
+
+		ctx := &JsonRPC{w: w, r: r, user: nil}
+		if err := fn(ctx); err != nil {
+			if ce, ok := err.(*api.Error); ok {
+				ctx.Error(ce.Code(), ce.Message())
+			} else {
+				ctx.Error(http.StatusInternalServerError, err.Error())
+			}
+		}
+	}
+}
+
+func (s *Server) authenticated(fn func(*JsonRPC) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		defer func() {
@@ -93,14 +113,18 @@ func (s *Server) handle(fn func(*JsonRPC) error) http.HandlerFunc {
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/relay", s.handle(s.apiRelayGet))
-	mux.HandleFunc("POST /api/v1/authorize", s.handle(s.apiNodeAuthorize))
-	mux.HandleFunc("POST /api/v1/nodes", s.handle(s.apiNodeRegister))
-	mux.HandleFunc("DELETE /api/v1/nodes/{id}", s.handle(s.apiNodeUnregister))
-	mux.HandleFunc("POST /api/v1/nodes/{id}", s.handle(s.apiNodeRefresh))
-	mux.HandleFunc("GET /api/v1/nodes", s.handle(s.apiNodeList))
+	mux.HandleFunc("GET /api/v1/relay", s.authenticated(s.apiRelayGet))
+	mux.HandleFunc("POST /api/v1/authorize", s.authenticated(s.apiNodeAuthorize))
+	mux.HandleFunc("POST /api/v1/nodes", s.authenticated(s.apiNodeRegister))
+	mux.HandleFunc("DELETE /api/v1/nodes/{id}", s.authenticated(s.apiNodeUnregister))
+	mux.HandleFunc("POST /api/v1/nodes/{id}", s.authenticated(s.apiNodeRefresh))
+	mux.HandleFunc("GET /api/v1/nodes", s.authenticated(s.apiNodeList))
 
-	mux.HandleFunc("POST /api/v1/admin/invite", s.handle(s.requireAdmin(s.adminCreateInviteLink)))
+	mux.HandleFunc("POST /api/v1/admin/invite", s.authenticated(s.asAdmin(s.adminCreateInviteLink)))
+	mux.HandleFunc("DELETE /api/v1/admin/invite/{id}", s.authenticated(s.asAdmin(s.adminDeleteInviteLink)))
+
+	// redeem is public since it's getting a magic link
+	mux.HandleFunc("POST /redeem/{id}", s.handle(s.adminRedeemInviteLink))
 
 	mux.HandleFunc("/", notFoundHandler)
 	return mux
@@ -200,6 +224,13 @@ func (s *Server) GetBaseUrl() string {
 	return s.baseUrl
 }
 
+func adminDBPath() string {
+	if p := strings.TrimSpace(os.Getenv("ADMIN_DB_PATH")); p != "" {
+		return p
+	}
+	return "admin.jkv"
+}
+
 func NewServer(listenAddress, adminKey string) (*Server, error) {
 	log.Printf("Build Version: %s\n", BuildVersion)
 
@@ -210,7 +241,7 @@ func NewServer(listenAddress, adminKey string) (*Server, error) {
 
 	acl, _ := NewAllowList("allow.list")
 
-	kv, err := jsonkv.Open("admin.jkv")
+	kv, err := jsonkv.Open(adminDBPath())
 	if err != nil {
 		return nil, err
 	}

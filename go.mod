@@ -6,6 +6,7 @@ require (
 	charm.land/huh/v2 v2.0.3
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/goccy/go-yaml v1.19.2
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/libp2p/go-libp2p v0.49.0
 	github.com/multiformats/go-multiaddr v0.16.1
@@ -13,6 +14,7 @@ require (
 	github.com/ollama/ollama v0.33.1
 	github.com/sethvargo/go-retry v0.4.0
 	github.com/stretchr/testify v1.11.1
+	github.com/urfave/cli/v3 v3.11.0
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef
 )
 
@@ -50,7 +52,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/ipfs/go-cid v0.6.2 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect

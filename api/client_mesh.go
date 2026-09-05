@@ -112,6 +112,10 @@ func (c *MeshClient) Authorize(id string) error {
 	return c.transport.Post("/api/v1/authorize", &req, &resp)
 }
 
+func (c *MeshClient) Unregister(id string) error {
+	return c.transport.Delete(fmt.Sprintf("/api/v1/nodes/%s", id))
+}
+
 func (mc *MeshClient) Register(name string, id string) (*Registration, error) {
 	req := RegisterNodeRequest{
 		Node: Node{

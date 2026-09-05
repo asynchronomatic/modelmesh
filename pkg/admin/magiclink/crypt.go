@@ -43,11 +43,11 @@ func Encrypt(plaintext string, key EncryptionKey) (string, error) {
 
 	// nonce || ciphertext || tag
 	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
-	return base64.StdEncoding.EncodeToString(sealed), nil
+	return base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
 func Decrypt(ciphertextB64 string, key EncryptionKey) (string, error) {
-	sealed, err := base64.StdEncoding.DecodeString(ciphertextB64)
+	sealed, err := base64.RawURLEncoding.DecodeString(ciphertextB64)
 	if err != nil {
 		return "", err
 	}
@@ -87,7 +87,7 @@ func (m *MagicLink) Decrypt(value string, v any) error {
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal([]byte(data), &v)
+	return json.Unmarshal([]byte(data), v)
 }
 
 type MagicLink struct {

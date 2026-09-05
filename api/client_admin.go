@@ -12,6 +12,7 @@ type AdminClient struct {
 }
 
 type CreateInviteRequest struct {
+	Name        string // This will be attached to all nodes invited in (As InvitedAs )
 	LifetimeSec uint64
 	OneTime     bool
 	MeshId      string
@@ -22,14 +23,23 @@ type CreateInviteResponse struct {
 	InviteLink string
 }
 
-func (c *AdminClient) InviteLink(meshId string, lifetime time.Duration) (string, string, error) {
-	req := CreateInviteRequest{
-		MeshId:      meshId,
-		LifetimeSec: uint64(lifetime.Seconds()),
+func (c *AdminClient) CreateInvite(req CreateInviteRequest) (*CreateInviteResponse, error) {
+	if req.MeshId == "" {
+		req.MeshId = "default"
 	}
 	resp := CreateInviteResponse{}
+	err := c.transport.Post("/api/v1/admin/invite", &req, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
 
-	err := c.transport.Post("/api/v1/admin/link", &req, &resp)
+func (c *AdminClient) InviteLink(meshId string, lifetime time.Duration) (string, string, error) {
+	resp, err := c.CreateInvite(CreateInviteRequest{
+		MeshId:      meshId,
+		LifetimeSec: uint64(lifetime.Seconds()),
+	})
 	if err != nil {
 		return "", "", err
 	}
@@ -41,9 +51,19 @@ type DeleteInviteRequest struct {
 }
 
 func (c *AdminClient) DeleteInvite(inviteId string) error {
-	return c.transport.Delete(fmt.Sprintf("/api/v1/admin/link/%s", inviteId))
+	return c.transport.Delete(fmt.Sprintf("/api/v1/admin/invite/%s", inviteId))
 }
 
 func (c *AdminClient) KickPeer(peerId string) error {
 	return c.transport.Delete(fmt.Sprintf("/api/v1/admin/peer/%s", peerId))
+}
+
+type RedeemInviteRequest struct {
+	Node Node
+}
+
+type RedeemInviteResponse struct {
+	MeshId      string // the Mesh Id to set
+	MeshSecret  string // the mesh secret to set
+	MeshServers []string
 }

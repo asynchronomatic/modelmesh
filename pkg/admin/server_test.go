@@ -5,17 +5,26 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"modelmesh/api"
+	"modelmesh/pkg/jsonkv"
 )
 
-func TestAdminRequiresAuth(t *testing.T) {
-	s, err := NewServer(":0", "test-secret")
+func testNewServer(t *testing.T, addr, secret string) *Server {
+	t.Helper()
+	t.Setenv("ADMIN_DB_PATH", filepath.Join(t.TempDir(), "admin.jkv"))
+	s, err := NewServer(addr, secret)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func TestAdminRequiresAuth(t *testing.T) {
+	s := testNewServer(t, ":0", "test-secret")
 	ts := httptest.NewServer(s.routes())
 	t.Cleanup(ts.Close)
 
@@ -40,12 +49,47 @@ func TestAdminRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestAdminBearerAuthAndRegister(t *testing.T) {
+func TestNewServerUsesAdminDBPath(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "custom.jkv")
+	t.Setenv("ADMIN_DB_PATH", dir)
 	s, err := NewServer(":0", "test-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.Close() })
+	if err := s.kv.Put("probe", "ok"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	kv, err := jsonkv.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = kv.Close() })
+	var got string
+	if err := kv.Get("probe", &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "ok" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestAdminDBPathDefault(t *testing.T) {
+	t.Setenv("ADMIN_DB_PATH", "")
+	if got := adminDBPath(); got != "admin.jkv" {
+		t.Fatalf("adminDBPath()=%q", got)
+	}
+	t.Setenv("ADMIN_DB_PATH", " /custom/path ")
+	if got := adminDBPath(); got != "/custom/path" {
+		t.Fatalf("adminDBPath()=%q", got)
+	}
+}
+
+func TestAdminBearerAuthAndRegister(t *testing.T) {
+	s := testNewServer(t, ":0", "test-secret")
 	ts := httptest.NewServer(s.routes())
 	t.Cleanup(ts.Close)
 
