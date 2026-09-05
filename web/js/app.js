@@ -8,6 +8,10 @@
     filter: "",
     nodesFilter: "",
     error: null,
+    adminEnabled: false,
+    invites: [],
+    adminNodes: [],
+    createdInvite: null,
     meshSize: { w: 0, h: 0 },
     selectedPeer: null,
     expandedPeer: null,
@@ -48,6 +52,22 @@
     welcomeChat: document.getElementById("welcome-chat-url"),
     welcomeCurl: document.getElementById("welcome-curl"),
     welcomeLocalNote: document.getElementById("welcome-local-note"),
+    navAdmin: document.getElementById("nav-admin"),
+    adminCount: document.getElementById("admin-count"),
+    adminOpen: document.getElementById("admin-invite-open"),
+    adminModal: document.getElementById("admin-invite-modal"),
+    adminForm: document.getElementById("admin-invite-form"),
+    adminName: document.getElementById("admin-invite-name"),
+    adminLifetime: document.getElementById("admin-invite-lifetime"),
+    adminOnce: document.getElementById("admin-invite-once"),
+    adminError: document.getElementById("admin-invite-error"),
+    adminNodesError: document.getElementById("admin-nodes-error"),
+    adminModalError: document.getElementById("admin-invite-modal-error"),
+    adminCreated: document.getElementById("admin-invite-created"),
+    adminCreatedLink: document.getElementById("admin-invite-link"),
+    adminCopy: document.getElementById("admin-invite-copy"),
+    adminInvitesBody: document.getElementById("admin-invites-body"),
+    adminNodesBody: document.getElementById("admin-nodes-body"),
   };
 
   function setStatus(kind, label) {
@@ -61,6 +81,21 @@
     if (!res.ok) {
       throw new Error(`${path}: ${res.status} ${res.statusText}`);
     }
+    return res.json();
+  }
+
+  async function sendJSON(path, method, body) {
+    const res = await fetch(path, {
+      method,
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: body == null ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = (await res.text()).trim();
+      throw new Error(text || `${path}: ${res.status} ${res.statusText}`);
+    }
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) return null;
     return res.json();
   }
 
@@ -960,12 +995,284 @@
     }
   }
 
+  function setAdminVisible(on) {
+    state.adminEnabled = !!on;
+    const nav = el.navAdmin || document.getElementById("nav-admin");
+    if (nav) {
+      nav.hidden = !on;
+      nav.classList.toggle("hidden", !on);
+      nav.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    if (!on && state.view === "admin") showView("welcome");
+  }
+
+  function formatInviteExpiry(unix) {
+    const n = Number(unix) || 0;
+    if (n <= 0) return "Never";
+    const d = new Date(n * 1000);
+    if (Number.isNaN(d.getTime())) return "Never";
+    return d.toLocaleString();
+  }
+
+  function setErrorEl(node, msg) {
+    if (!node) return;
+    if (!msg) {
+      node.hidden = true;
+      node.classList.add("hidden");
+      node.textContent = "";
+      return;
+    }
+    node.hidden = false;
+    node.classList.remove("hidden");
+    node.textContent = msg;
+  }
+
+  function setAdminError(msg) {
+    setErrorEl(el.adminError, msg);
+  }
+
+  function setInviteModalError(msg) {
+    setErrorEl(el.adminModalError, msg);
+  }
+
+  function inviteModalOpen() {
+    return el.adminModal && !el.adminModal.hidden && !el.adminModal.classList.contains("hidden");
+  }
+
+  function openInviteModal() {
+    if (!state.adminEnabled) return;
+    if (el.adminForm) el.adminForm.reset();
+    setInviteModalError("");
+    if (el.adminModal) {
+      el.adminModal.hidden = false;
+      el.adminModal.classList.remove("hidden");
+    }
+    if (el.adminName) el.adminName.focus();
+  }
+
+  function closeInviteModal() {
+    if (el.adminModal) {
+      el.adminModal.hidden = true;
+      el.adminModal.classList.add("hidden");
+    }
+    setInviteModalError("");
+  }
+
+  function tailLink(link) {
+    const s = String(link || "");
+    if (s.length <= 16) return s;
+    return "…" + s.slice(-16);
+  }
+
+  function copyIconSVG() {
+    return `<svg class="copy-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  }
+
+  function inviteLinkCell(link, copyTitle) {
+    const full = String(link || "");
+    const title = copyTitle || "Copy invite link";
+    return `<span class="invite-link-cell"><code>${escapeHTML(tailLink(full))}</code><button type="button" class="btn btn-ghost btn-copy" data-copy-link="${escapeHTML(full)}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">${copyIconSVG()}</button></span>`;
+  }
+
+  function copyToClipboard(text, btn) {
+    if (!text) return;
+    const label = btn ? btn.getAttribute("title") || "Copy invite link" : "";
+    navigator.clipboard.writeText(text).then(() => {
+      if (!btn) return;
+      btn.setAttribute("title", "Copied");
+      setTimeout(() => { btn.setAttribute("title", label); }, 1200);
+    }).catch(() => {
+      if (!btn) return;
+      btn.setAttribute("title", "Copy failed");
+      setTimeout(() => { btn.setAttribute("title", label); }, 1200);
+    });
+  }
+
+  function showCreatedInvite(link) {
+    if (!el.adminCreated) return;
+    if (!link) {
+      el.adminCreated.hidden = true;
+      el.adminCreated.classList.add("hidden");
+      return;
+    }
+    el.adminCreated.hidden = false;
+    el.adminCreated.classList.remove("hidden");
+    if (el.adminCreatedLink) el.adminCreatedLink.textContent = tailLink(link);
+    if (el.adminCopy) el.adminCopy.setAttribute("data-copy-link", link);
+  }
+
+  function nodeID(n) {
+    return n.ID || n.Id || n.id || "";
+  }
+
+  function nodeName(n) {
+    return n.Name || n.name || "—";
+  }
+
+  function formatNodeUpdated(n) {
+    const raw = n.AddedAt || n.addedAt || n.LastUpdate || n.lastUpdate || n.last_update || "";
+    if (!raw) return "—";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime()) || d.getTime() === 0) return "—";
+    return d.toLocaleString();
+  }
+
+  function nodeMesh(n) {
+    return n.MeshId || n.meshId || n.mesh_id || "—";
+  }
+
+  function nodeInvitedAs(n) {
+    return n.InvitedAs || n.invitedAs || n.invited_as || "—";
+  }
+
+  function renderAdminNodes() {
+    if (el.adminCount) el.adminCount.textContent = String(state.adminNodes.length);
+    if (!el.adminNodesBody) return;
+    if (!state.adminNodes.length) {
+      el.adminNodesBody.innerHTML = `<tr><td colspan="6" class="empty">No nodes registered on the mesh.</td></tr>`;
+      return;
+    }
+    el.adminNodesBody.innerHTML = state.adminNodes.map((n) => {
+      const id = nodeID(n);
+      return `<tr>
+        <td>${escapeHTML(nodeName(n))}</td>
+        <td>${inviteLinkCell(id, "Copy peer ID")}</td>
+        <td>${escapeHTML(nodeMesh(n))}</td>
+        <td>${escapeHTML(nodeInvitedAs(n))}</td>
+        <td>${escapeHTML(formatNodeUpdated(n))}</td>
+        <td><button type="button" class="btn btn-danger btn-sm" data-kick-node="${escapeHTML(id)}">Kick</button></td>
+      </tr>`;
+    }).join("");
+  }
+
+  function renderAdminInvites() {
+    if (!el.adminInvitesBody) return;
+    if (!state.invites.length) {
+      el.adminInvitesBody.innerHTML = `<tr><td colspan="5" class="empty">No invites. Create one to add a node to the mesh.</td></tr>`;
+      return;
+    }
+    el.adminInvitesBody.innerHTML = state.invites.map((inv) => {
+      const id = escapeHTML(inv.InviteId || inv.inviteId || "");
+      const link = inv.InviteLink || inv.inviteLink || "";
+      const name = escapeHTML(inv.Name || inv.name || "—");
+      const once = inv.OneTime || inv.oneTime ? "One-time" : "Reusable";
+      const expires = escapeHTML(formatInviteExpiry(inv.Expires || inv.expires));
+      return `<tr>
+        <td>${name}</td>
+        <td>${inviteLinkCell(link)}</td>
+        <td>${expires}</td>
+        <td>${once}</td>
+        <td><button type="button" class="btn btn-danger btn-sm" data-revoke-invite="${id}">Revoke</button></td>
+      </tr>`;
+    }).join("");
+  }
+
+  function renderAdmin() {
+    renderAdminNodes();
+    renderAdminInvites();
+  }
+
+  async function loadInvites() {
+    if (!state.adminEnabled) return;
+    const data = await getJSON("/api/admin/invite");
+    state.invites = data.Invites || data.invites || [];
+    if (state.view === "admin") renderAdminInvites();
+  }
+
+  async function loadAdminNodes() {
+    if (!state.adminEnabled) return;
+    const data = await getJSON("/api/admin/node");
+    state.adminNodes = data.Nodes || data.nodes || [];
+    if (el.adminCount) el.adminCount.textContent = String(state.adminNodes.length);
+    if (state.view === "admin") renderAdminNodes();
+  }
+
+  async function checkAdmin() {
+    try {
+      const data = await getJSON("/api/admin/enabled");
+      const on = !!(data && (data.enabled || data.Enabled));
+      setAdminVisible(on);
+    } catch (_) {
+      setAdminVisible(false);
+      return;
+    }
+    if (!state.adminEnabled) return;
+    const tasks = [
+      loadInvites().catch((err) => {
+        state.invites = [];
+        setAdminError(err.message || String(err));
+      }),
+      loadAdminNodes().catch((err) => {
+        state.adminNodes = [];
+        setErrorEl(el.adminNodesError, err.message || String(err));
+      }),
+    ];
+    setAdminError("");
+    setErrorEl(el.adminNodesError, "");
+    await Promise.all(tasks);
+    if (state.view === "admin") renderAdmin();
+  }
+
+  async function createInvite(e) {
+    e.preventDefault();
+    if (!state.adminEnabled) return;
+    setInviteModalError("");
+    const lifetime = Number(el.adminLifetime && el.adminLifetime.value) || 0;
+    const submit = document.getElementById("admin-invite-create");
+    if (submit) submit.disabled = true;
+    try {
+      const created = await sendJSON("/api/admin/invite", "POST", {
+        Name: (el.adminName && el.adminName.value.trim()) || "",
+        LifetimeSec: lifetime,
+        OneTime: !!(el.adminOnce && el.adminOnce.checked),
+        MeshId: "default",
+      });
+      state.createdInvite = created;
+      showCreatedInvite(created.InviteLink || created.inviteLink || "");
+      closeInviteModal();
+      await loadInvites();
+    } catch (err) {
+      setInviteModalError(err.message || String(err));
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  }
+
+  async function revokeInvite(id) {
+    if (!id || !state.adminEnabled) return;
+    if (!window.confirm("Revoke this invite? It will no longer work.")) return;
+    setAdminError("");
+    try {
+      await sendJSON("/api/admin/invite/" + encodeURIComponent(id), "DELETE");
+      if (state.createdInvite && (state.createdInvite.InviteId === id || state.createdInvite.inviteId === id)) {
+        state.createdInvite = null;
+        showCreatedInvite("");
+      }
+      await loadInvites();
+    } catch (err) {
+      setAdminError(err.message || String(err));
+    }
+  }
+
+  async function kickNode(id) {
+    if (!id || !state.adminEnabled) return;
+    if (!window.confirm("Kick this node from the mesh? It will need a new invite to rejoin.")) return;
+    setErrorEl(el.adminNodesError, "");
+    try {
+      await sendJSON("/api/admin/node/" + encodeURIComponent(id), "DELETE");
+      await loadAdminNodes();
+    } catch (err) {
+      setErrorEl(el.adminNodesError, err.message || String(err));
+    }
+  }
+
   function render() {
     if (state.view === "welcome") renderWelcome();
     else if (state.view === "mesh") renderMesh();
     else if (state.view === "nodes") renderNodes();
     else if (state.view === "models") renderModels();
     else if (state.view === "chat") syncChatModels();
+    else if (state.view === "admin") renderAdmin();
     else if (state.view === "settings") renderSettings();
   }
 
@@ -999,12 +1306,13 @@
       const up = state.members.filter((m) => m.Reachable).length;
       setStatus("online", `${up}/${state.members.length} reachable`);
       syncChatModels();
-      render();
     } catch (err) {
       state.error = err;
       setStatus("offline", "API unavailable");
       console.error(err);
     }
+    await checkAdmin();
+    render();
   }
 
   let refreshTimer = null;
@@ -1060,6 +1368,49 @@
     setStatus("loading", "Refreshing");
     refresh();
   });
+  if (el.adminOpen) {
+    el.adminOpen.addEventListener("click", () => openInviteModal());
+  }
+  if (el.adminForm) {
+    el.adminForm.addEventListener("submit", createInvite);
+  }
+  if (el.adminModal) {
+    el.adminModal.addEventListener("click", (e) => {
+      if (e.target.closest("[data-close-invite-modal]")) closeInviteModal();
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && inviteModalOpen()) closeInviteModal();
+  });
+  if (el.adminCopy) {
+    el.adminCopy.addEventListener("click", () => {
+      copyToClipboard(el.adminCopy.getAttribute("data-copy-link"), el.adminCopy);
+    });
+  }
+  if (el.adminInvitesBody) {
+    el.adminInvitesBody.addEventListener("click", (e) => {
+      const copyBtn = e.target.closest("[data-copy-link]");
+      if (copyBtn) {
+        copyToClipboard(copyBtn.getAttribute("data-copy-link"), copyBtn);
+        return;
+      }
+      const btn = e.target.closest("[data-revoke-invite]");
+      if (!btn) return;
+      revokeInvite(btn.getAttribute("data-revoke-invite"));
+    });
+  }
+  if (el.adminNodesBody) {
+    el.adminNodesBody.addEventListener("click", (e) => {
+      const copyBtn = e.target.closest("[data-copy-link]");
+      if (copyBtn) {
+        copyToClipboard(copyBtn.getAttribute("data-copy-link"), copyBtn);
+        return;
+      }
+      const btn = e.target.closest("[data-kick-node]");
+      if (!btn) return;
+      kickNode(btn.getAttribute("data-kick-node"));
+    });
+  }
   el.search.addEventListener("input", () => {
     state.filter = el.search.value;
     if (state.view === "models") renderModels();

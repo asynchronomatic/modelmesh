@@ -56,6 +56,29 @@ func (s *Store) Delete(key string) error {
 	})
 }
 
+// ForEach calls fn for every key that starts with prefix. fn must not retain
+// the key or data slices after it returns.
+func (s *Store) ForEach(prefix string, fn func(key string, data []byte) error) error {
+	return s.db.View(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+		p := []byte(prefix)
+		for it.Seek(p); it.ValidForPrefix(p); it.Next() {
+			item := it.Item()
+			key := string(item.KeyCopy(nil))
+			err := item.Value(func(val []byte) error {
+				cp := make([]byte, len(val))
+				copy(cp, val)
+				return fn(key, cp)
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // Close closes the underlying database. It is safe to call more than once.
 func (s *Store) Close() error {
 	if s == nil || s.db == nil {

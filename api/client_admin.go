@@ -54,8 +54,67 @@ func (c *AdminClient) DeleteInvite(inviteId string) error {
 	return c.transport.Delete(fmt.Sprintf("/api/v1/admin/invite/%s", inviteId))
 }
 
+type InviteInfo struct {
+	InviteId   string
+	InviteLink string
+	Name       string
+	OneTime    bool
+	Expires    int64
+	MeshId     string
+}
+
+type ListInvitesResponse struct {
+	Invites []InviteInfo
+}
+
+func (c *AdminClient) ListInvites() (*ListInvitesResponse, error) {
+	resp := ListInvitesResponse{}
+	if err := c.transport.Get("/api/v1/admin/invite", &resp); err != nil {
+		return nil, err
+	}
+	if resp.Invites == nil {
+		resp.Invites = []InviteInfo{}
+	}
+	return &resp, nil
+}
+
+type AdminNode struct {
+	ID        string
+	Name      string
+	MeshId    string
+	AddedAt   time.Time
+	InvitedAs string
+}
+
+type ListAdminNodesResponse struct {
+	Nodes []AdminNode
+}
+
+func (c *AdminClient) ListNodes() (*ListAdminNodesResponse, error) {
+	resp := ListAdminNodesResponse{}
+	if err := c.transport.Get("/api/v1/admin/nodes", &resp); err != nil {
+		return nil, err
+	}
+	if resp.Nodes == nil {
+		resp.Nodes = []AdminNode{}
+	}
+	return &resp, nil
+}
+
+type KickPeerResponse struct {
+	NodeID string
+}
+
+type DeleteNodeResponse struct {
+	NodeID string
+}
+
+func (c *AdminClient) DeleteNode(nodeId string) error {
+	return c.transport.Delete(fmt.Sprintf("/api/v1/admin/nodes/%s", nodeId))
+}
+
 func (c *AdminClient) KickPeer(peerId string) error {
-	return c.transport.Delete(fmt.Sprintf("/api/v1/admin/peer/%s", peerId))
+	return c.DeleteNode(peerId)
 }
 
 type RedeemInviteRequest struct {

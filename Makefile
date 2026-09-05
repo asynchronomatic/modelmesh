@@ -27,8 +27,13 @@ run-hybrid:
 
 
 test:
-	go test -v github.com/asynchronomatic/speakeasy/...
+	go test github.com/asynchronomatic/speakeasy/...
 .PHONY: test
+
+test-verbose:
+	go test -v github.com/asynchronomatic/speakeasy/...
+.PHONY: test-verbose
+
 
 -include Makefile.local
 

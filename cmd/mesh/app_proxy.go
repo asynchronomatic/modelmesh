@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/asynchronomatic/speakeasy/api"
 	"github.com/asynchronomatic/speakeasy/pkg/core"
 	"github.com/asynchronomatic/speakeasy/pkg/log"
 	"github.com/asynchronomatic/speakeasy/pkg/mesh"
@@ -15,7 +17,31 @@ func runProxy(config *core.Config) error {
 		log.Fatalf("Could not initialize mesh err:%v\n", err)
 	}
 	p, _ := proxy.NewProxy(service, config.Proxy.Listen, config.Providers)
+	attachAdminController(p, config)
 	return core.RunInterruptible(p)
+}
+
+func adminControllerAddr(config *core.Config) (addr, secret string, ok bool) {
+	secret = strings.TrimSpace(config.Admin.Secret)
+	if secret == "" {
+		return "", "", false
+	}
+	addr = strings.TrimSpace(config.Admin.Address)
+	if addr == "" {
+		addr = strings.TrimSpace(config.Mesh.Address)
+	}
+	if addr == "" {
+		return "", "", false
+	}
+	return addr, secret, true
+}
+
+func attachAdminController(p *proxy.Proxy, config *core.Config) {
+	addr, secret, ok := adminControllerAddr(config)
+	if !ok {
+		return
+	}
+	p.WithAdminController(api.NewClient(addr, secret).Admin())
 }
 
 func runHybrid(config *core.Config) error {

@@ -59,7 +59,7 @@ func TestUIStaticAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(bodyBytes)
-	for _, needle := range []string{"Speakeasy", "Welcome", "OpenAI endpoint", "/v1", "Open WebUI", "Mesh", "Models", "<th>Owner</th>", "<th>Context</th>", "<th>Visibility</th>", "<th>Capabilities</th>", "sk-speakeasy"} {
+	for _, needle := range []string{"Speakeasy", "Welcome", "OpenAI endpoint", "/v1", "Open WebUI", "Mesh", "Models", "view-admin", "New Invite", "admin-invite-modal", "admin-nodes-body", "Peer ID", "<th>Owner</th>", "<th>Context</th>", "<th>Visibility</th>", "<th>Capabilities</th>", "sk-speakeasy"} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("index missing %s", needle)
 		}
@@ -145,6 +145,31 @@ func TestAppJSUsesRefreshWebsocket(t *testing.T) {
 	for _, old := range []string{"setInterval(refresh", "POLL_MS"} {
 		if strings.Contains(s, old) {
 			t.Fatalf("app.js still polls with %s", old)
+		}
+	}
+}
+
+func TestAppJSAdminPanel(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(webDir(), "js", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, needle := range []string{
+		"/api/admin/enabled",
+		"/api/admin/invite",
+		"/api/admin/node",
+		"checkAdmin",
+		"createInvite",
+		"openInviteModal",
+		"revokeInvite",
+		"kickNode",
+		"data.enabled || data.Enabled",
+		"slice(-16)",
+		"data-copy-link",
+	} {
+		if !strings.Contains(s, needle) {
+			t.Fatalf("app.js missing %s", needle)
 		}
 	}
 }

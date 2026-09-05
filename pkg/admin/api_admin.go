@@ -4,9 +4,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -191,6 +193,165 @@ func (s *Server) adminRedeemInviteLink(ctx *JsonRPC) error {
 		MeshServer: s.advertiseURL,
 	}
 	return ctx.ReplyObject(&resp)
+}
+
+func (s *Server) adminListInviteLinks(ctx *JsonRPC) error {
+	assert.Equal("admin", ctx.Group())
+
+	prefix := "/invites/default/"
+	base := strings.TrimRight(s.advertiseURL, "/")
+	now := time.Now().Unix()
+	invites := make([]api.InviteInfo, 0)
+	var expired []string
+
+	err := s.kv.ForEach(prefix, func(key string, data []byte) error {
+		var invite inviteSecret
+		if err := json.Unmarshal(data, &invite); err != nil {
+			return err
+		}
+		id := strings.TrimPrefix(key, prefix)
+		if id == "" {
+			return nil
+		}
+		if invite.Expires != 0 && now >= invite.Expires {
+			expired = append(expired, key)
+			return nil
+		}
+		invites = append(invites, api.InviteInfo{
+			InviteId:   id,
+			InviteLink: fmt.Sprintf("%s/api/v1/redeem/%s", base, id),
+			Name:       invite.InviteAs,
+			OneTime:    invite.OneTime,
+			Expires:    invite.Expires,
+			MeshId:     invite.MeshId,
+		})
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, key := range expired {
+		_ = s.kv.Delete(key)
+	}
+	return ctx.ReplyObject(&api.ListInvitesResponse{Invites: invites})
+}
+
+func parseMeshNodeKVKey(key string) (meshID, nodeID string, ok bool) {
+	const prefix = "/mesh/"
+	if !strings.HasPrefix(key, prefix) {
+		return "", "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(key, prefix), "/")
+	if len(parts) != 3 || parts[1] != "nodes" || parts[0] == "" || parts[2] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[2], true
+}
+
+// adminListNodes lists nodes stored in the database across every mesh.
+func (s *Server) adminListNodes(ctx *JsonRPC) error {
+	assert.Equal("admin", ctx.Group())
+
+	nodes := make([]api.AdminNode, 0)
+	err := s.kv.ForEach("/mesh/", func(key string, data []byte) error {
+		meshID, nodeID, ok := parseMeshNodeKVKey(key)
+		if !ok {
+			return nil
+		}
+		var rec meshNodeRecord
+		if err := json.Unmarshal(data, &rec); err != nil {
+			return err
+		}
+		id := rec.NodeID
+		if id == "" {
+			id = nodeID
+		}
+		nodes = append(nodes, api.AdminNode{
+			ID:        id,
+			Name:      rec.Name,
+			MeshId:    meshID,
+			AddedAt:   rec.AddedAt,
+			InvitedAs: rec.InvitedAs,
+		})
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].MeshId != nodes[j].MeshId {
+			return nodes[i].MeshId < nodes[j].MeshId
+		}
+		if nodes[i].Name != nodes[j].Name {
+			return nodes[i].Name < nodes[j].Name
+		}
+		return nodes[i].ID < nodes[j].ID
+	})
+	return ctx.ReplyObject(&api.ListAdminNodesResponse{Nodes: nodes})
+}
+
+func (s *Server) meshKeysForNode(id string) ([]string, error) {
+	var keys []string
+	err := s.kv.ForEach("/mesh/", func(key string, data []byte) error {
+		_, nodeID, ok := parseMeshNodeKVKey(key)
+		if !ok {
+			return nil
+		}
+		if nodeID == id {
+			keys = append(keys, key)
+			return nil
+		}
+		var rec meshNodeRecord
+		if err := json.Unmarshal(data, &rec); err != nil {
+			return err
+		}
+		if rec.NodeID == id {
+			keys = append(keys, key)
+		}
+		return nil
+	})
+	return keys, err
+}
+
+// adminDeleteNode removes a node from every mesh in the database and from the allow list.
+func (s *Server) adminDeleteNode(ctx *JsonRPC) error {
+	assert.Equal("admin", ctx.Group())
+
+	id := ctx.PathVar("id")
+	if id == "" {
+		return api.NewError(http.StatusBadRequest, "node id is required")
+	}
+
+	keys, err := s.meshKeysForNode(id)
+	if err != nil {
+		return err
+	}
+
+	s.lock.Lock()
+	_, registered := s.nodes[id]
+	if registered {
+		s.lastUpdate = time.Now()
+		s.logicalTime++
+		delete(s.nodes, id)
+	}
+	s.lock.Unlock()
+
+	s.acl.Remove(id)
+
+	if len(keys) == 0 && !registered {
+		return api.NewError(http.StatusNotFound, "node not found")
+	}
+	for _, key := range keys {
+		if err := s.kv.Delete(key); err != nil {
+			return err
+		}
+	}
+
+	return ctx.ReplyObject(&api.DeleteNodeResponse{NodeID: id})
+}
+
+func (s *Server) adminKickPeer(ctx *JsonRPC) error {
+	return s.adminDeleteNode(ctx)
 }
 
 func (s *Server) adminDeleteInviteLink(ctx *JsonRPC) error {

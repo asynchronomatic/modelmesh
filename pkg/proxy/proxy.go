@@ -19,6 +19,7 @@ import (
 
 	"github.com/sethvargo/go-retry"
 
+	"github.com/asynchronomatic/speakeasy/api"
 	"github.com/asynchronomatic/speakeasy/pkg/log"
 	"github.com/asynchronomatic/speakeasy/pkg/proxy/modeldex"
 	"github.com/asynchronomatic/speakeasy/pkg/proxy/socket"
@@ -51,10 +52,8 @@ type Proxy struct {
 	meshMux *http.ServeMux // handler for requests coming in via the mesh if we want something different
 	mesh    core.MeshServiceProvider
 
-	lock sync.RWMutex
-	//meshRoutes map[string]*ModelRoute // contains all models discovered in the mesh
-	//meshRoutesOAI map[string]*ModelRoute // contains all models discovered in the mesh
-	//localRoutes map[string]*ModelRoute // contain the mapping of a model to a ollama server configured to this node
+	admin *api.AdminClient
+	lock  sync.RWMutex
 
 	notifier    *socket.Notifier
 	modelRouter *modeldex.ModelRouter
@@ -249,6 +248,11 @@ func (p *Proxy) Serve(ctx context.Context) error {
 	return svr.Shutdown(context.Background())
 }
 
+func (p *Proxy) WithAdminController(admin *api.AdminClient) {
+	log.WithName("proxy").Warnf("Enabling Admin Controller")
+	p.admin = admin
+}
+
 // NewProxy creates a local proxy that routes ollama requests based on model name to a specific
 // endpoint on the network
 func NewProxy(meshService core.MeshServiceProvider, listen string, providers []core.Provider) (*Proxy, error) {
@@ -280,6 +284,15 @@ func NewProxy(meshService core.MeshServiceProvider, listen string, providers []c
 	p.mux.HandleFunc("GET /api/mesh/models", p.uiModelsHandler)
 	p.mux.HandleFunc("GET /api/mesh/members", p.meshMembers)
 	p.mux.HandleFunc("GET /api/mesh/config", p.uiConfigHandler)
+
+	p.mux.HandleFunc("GET /api/admin/enabled", p.handle(p.withAdmin(p.adminEnabledHandler)))
+
+	p.mux.HandleFunc("POST /api/admin/invite", p.handle(p.withAdmin(p.adminCreateInvitedHandler)))
+	p.mux.HandleFunc("GET /api/admin/invite", p.handle(p.withAdmin(p.adminListInvitesHandler)))
+	p.mux.HandleFunc("DELETE /api/admin/invite/{id}", p.handle(p.withAdmin(p.adminRevokeInviteHandler)))
+
+	p.mux.HandleFunc("GET /api/admin/node", p.handle(p.withAdmin(p.adminListNodesHandler)))
+	p.mux.HandleFunc("DELETE /api/admin/node/{id}", p.handle(p.withAdmin(p.adminKickNodeHandler)))
 
 	p.mux.HandleFunc("GET /{$}", p.uiRootHandler)
 	p.mux.HandleFunc("GET /ui", p.uiHandler)

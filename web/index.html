@@ -84,6 +84,16 @@
         </button>
         <div class="sidebar-spacer"></div>
         <div class="sidebar-sep"></div>
+        <button type="button" class="sidebar-item hidden" id="nav-admin" data-view="admin" hidden>
+          <span class="mailbox-icon-wrap">
+            <svg class="mailbox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="11" width="14" height="10" rx="2"/>
+              <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+            </svg>
+          </span>
+          <span class="sidebar-item-label">Admin</span>
+          <span class="sidebar-item-count" id="admin-count">0</span>
+        </button>
         <button type="button" class="sidebar-item" data-view="settings">
           <span class="mailbox-icon-wrap">
             <svg class="mailbox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -242,6 +252,68 @@
           </div>
         </section>
 
+        <section id="view-admin" class="view" data-view="admin">
+          <div class="page-header">
+            <h2>Admin</h2>
+            <p class="muted">Manage mesh nodes and invite links</p>
+          </div>
+          <div class="admin-section">
+            <div class="admin-section-header">
+              <h3>Nodes</h3>
+            </div>
+            <p id="admin-nodes-error" class="admin-error hidden" hidden></p>
+            <div class="table-wrap">
+              <table class="data-table" id="admin-nodes-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Peer ID</th>
+                    <th>Mesh</th>
+                    <th>Invited as</th>
+                    <th>Added</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="admin-nodes-body">
+                  <tr><td colspan="6" class="empty">Loading nodes…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="admin-section">
+            <div class="admin-section-header">
+              <h3>Invites</h3>
+              <button type="button" class="btn btn-primary" id="admin-invite-open">New Invite</button>
+            </div>
+            <p id="admin-invite-error" class="admin-error hidden" hidden></p>
+            <div id="admin-invite-created" class="admin-created hidden" hidden>
+              <span>Invite created</span>
+              <span class="invite-link-cell">
+                <code id="admin-invite-link"></code>
+                <button type="button" class="btn btn-ghost btn-copy" id="admin-invite-copy" title="Copy invite link" aria-label="Copy invite link">
+                  <svg class="copy-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+              </span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="admin-invites-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Link</th>
+                    <th>Expires</th>
+                    <th>Use</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="admin-invites-body">
+                  <tr><td colspan="5" class="empty">Loading invites…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <section id="view-settings" class="view" data-view="settings">
           <div class="page-header">
             <h2>Settings</h2>
@@ -250,6 +322,41 @@
           <pre class="settings-yaml" id="settings-yaml">Loading…</pre>
         </section>
       </main>
+    </div>
+  </div>
+  <div id="admin-invite-modal" class="modal hidden" hidden>
+    <div class="modal-backdrop" data-close-invite-modal></div>
+    <div class="modal-card modal-card-invite" role="dialog" aria-modal="true" aria-labelledby="admin-invite-modal-title">
+      <div class="modal-header">
+        <h3 id="admin-invite-modal-title">New invite</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close-invite-modal aria-label="Close">Close</button>
+      </div>
+      <form id="admin-invite-form" class="modal-form">
+        <div class="modal-body">
+          <label class="admin-field">
+            <span>Invited as</span>
+            <input type="text" id="admin-invite-name" placeholder="optional name" autocomplete="off">
+          </label>
+          <label class="admin-field">
+            <span>Lifetime</span>
+            <select id="admin-invite-lifetime" class="select-input">
+              <option value="0">Never expires</option>
+              <option value="3600">1 hour</option>
+              <option value="86400">1 day</option>
+              <option value="604800">7 days</option>
+            </select>
+          </label>
+          <label class="admin-check">
+            <input type="checkbox" id="admin-invite-once">
+            <span>One-time</span>
+          </label>
+          <p id="admin-invite-modal-error" class="admin-error hidden" hidden></p>
+        </div>
+        <div class="modal-footer-actions">
+          <button type="button" class="btn btn-outline" data-close-invite-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary" id="admin-invite-create">Create</button>
+        </div>
+      </form>
     </div>
   </div>
   <script src="/ui/js/app.js"></script>
