@@ -15,7 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	ma "github.com/multiformats/go-multiaddr"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 // FIXME: move this to proxy

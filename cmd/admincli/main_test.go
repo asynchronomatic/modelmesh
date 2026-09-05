@@ -17,10 +17,13 @@ func TestHelp(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, needle := range []string{"node", "admin", "redeem", "meshes"} {
+	for _, needle := range []string{"Speakeasy", "node", "admin", "redeem", "meshes", "SPEAKEASY_ADMIN_TOKEN"} {
 		if !strings.Contains(out, needle) {
 			t.Fatalf("help missing %q:\n%s", needle, out)
 		}
+	}
+	if strings.Contains(out, "ModelMesh") || strings.Contains(out, "MODELMESH_") {
+		t.Fatalf("help still has old branding:\n%s", out)
 	}
 }
 

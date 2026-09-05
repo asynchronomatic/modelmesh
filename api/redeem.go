@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"modelmesh/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
 )
 
 func parseInviteURL(raw string) (*url.URL, error) {

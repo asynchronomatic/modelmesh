@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"modelmesh/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
 )
 
 type Doer struct {

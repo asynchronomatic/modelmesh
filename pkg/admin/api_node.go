@@ -10,11 +10,11 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"modelmesh/api"
-	"modelmesh/pkg/admin/auth"
-	"modelmesh/pkg/admin/magiclink"
-	"modelmesh/pkg/jsonkv"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/admin/auth"
+	"github.com/asynchronomatic/speakeasy/pkg/admin/magiclink"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonkv"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 func newNodeToken() string {

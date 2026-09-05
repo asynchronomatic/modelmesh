@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"modelmesh/pkg/mesh"
-	"modelmesh/pkg/proxy/modeldex"
+	"github.com/asynchronomatic/speakeasy/pkg/mesh"
+	"github.com/asynchronomatic/speakeasy/pkg/proxy/modeldex"
 )
 
 // FIXME: alias until we restructure the code a bit

@@ -19,11 +19,11 @@ import (
 
 	"github.com/sethvargo/go-retry"
 
-	"modelmesh/pkg/log"
-	"modelmesh/pkg/proxy/modeldex"
-	"modelmesh/pkg/proxy/socket"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/proxy/modeldex"
+	"github.com/asynchronomatic/speakeasy/pkg/proxy/socket"
 
-	"modelmesh/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
 )
 
 const maxBody = 8 << 20 // 1 MiB

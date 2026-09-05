@@ -1,7 +1,7 @@
 package api
 
 import (
-	"modelmesh/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
 )
 
 // Client allows for access to the relay control server for managing mes ACLs

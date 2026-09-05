@@ -12,7 +12,7 @@ import (
 
 	"github.com/ollama/ollama/types/model"
 
-	"modelmesh/web"
+	"github.com/asynchronomatic/speakeasy/web"
 )
 
 func TestWebDirHasIndex(t *testing.T) {
@@ -59,9 +59,14 @@ func TestUIStaticAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(bodyBytes)
-	for _, needle := range []string{"Welcome", "OpenAI endpoint", "/v1", "Open WebUI", "Mesh", "Models", "<th>Owner</th>", "<th>Context</th>", "<th>Visibility</th>", "<th>Capabilities</th>"} {
+	for _, needle := range []string{"Speakeasy", "Welcome", "OpenAI endpoint", "/v1", "Open WebUI", "Mesh", "Models", "<th>Owner</th>", "<th>Context</th>", "<th>Visibility</th>", "<th>Capabilities</th>", "sk-speakeasy"} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("index missing %s", needle)
+		}
+	}
+	for _, old := range []string{"ModelMesh", "sk-modelmesh"} {
+		if strings.Contains(body, old) {
+			t.Fatalf("index still has old branding %s", old)
 		}
 	}
 	for _, old := range []string{"<th>Size</th>", "<th>Family</th>", "<th>Parameters</th>"} {

@@ -11,9 +11,9 @@ import (
 
 	"github.com/ollama/ollama/types/model"
 
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
-	"modelmesh/web"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
+	"github.com/asynchronomatic/speakeasy/web"
 )
 
 type UIModelProvider = core.PeerNode

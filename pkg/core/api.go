@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"modelmesh/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
 )
 
 type PeerConnectionDetails struct {

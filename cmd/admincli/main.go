@@ -8,7 +8,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"modelmesh/api"
+	"github.com/asynchronomatic/speakeasy/api"
 )
 
 func out() *os.File {
@@ -25,7 +25,7 @@ func main() {
 func newCommand() *cli.Command {
 	return &cli.Command{
 		Name:                  "admincli",
-		Usage:                 "ModelMesh admin and node CLI",
+		Usage:                 "Speakeasy admin and node CLI",
 		EnableShellCompletion: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -33,13 +33,13 @@ func newCommand() *cli.Command {
 				Aliases: []string{"a"},
 				Usage:   "admin HTTP address",
 				Value:   "http://127.0.0.1:4002",
-				Sources: cli.EnvVars("MODELMESH_ADMIN_ADDR"),
+				Sources: cli.EnvVars("SPEAKEASY_ADMIN_ADDR"),
 			},
 			&cli.StringFlag{
 				Name:    "token",
 				Aliases: []string{"t"},
 				Usage:   "admin bearer token",
-				Sources: cli.EnvVars("MODELMESH_ADMIN_TOKEN"),
+				Sources: cli.EnvVars("SPEAKEASY_ADMIN_TOKEN"),
 			},
 			&cli.StringFlag{
 				Name:    "mesh",
@@ -73,7 +73,7 @@ func newCommand() *cli.Command {
 
 func requireToken(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 	if strings.TrimSpace(cmd.String("token")) == "" {
-		return ctx, fmt.Errorf("--token is required (or set MODELMESH_ADMIN_TOKEN)")
+		return ctx, fmt.Errorf("--token is required (or set SPEAKEASY_ADMIN_TOKEN)")
 	}
 	return ctx, nil
 }

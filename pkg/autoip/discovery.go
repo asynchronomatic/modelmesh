@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 
-	"modelmesh/pkg/jsonclient"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 var cloudflareRadarURL = "https://ipv4-check-perf.radar.cloudflare.com"

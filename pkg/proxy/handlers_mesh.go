@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 func (p *Proxy) meshStatus(w http.ResponseWriter, r *http.Request) {

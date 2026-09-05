@@ -8,9 +8,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"modelmesh/api"
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 type DiscoveryManager struct {

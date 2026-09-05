@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"modelmesh/api"
+	"github.com/asynchronomatic/speakeasy/api"
 )
 
 func adminCommand() *cli.Command {

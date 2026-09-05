@@ -11,9 +11,9 @@ import (
 
 	"charm.land/huh/v2"
 
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
-	"modelmesh/pkg/mesh"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/mesh"
 )
 
 // Install defaults. Change these to adjust what `mesh init` offers (and writes
@@ -182,7 +182,7 @@ func collectInstallSettings() (installSettings, error) {
 				Value(&s.ForcePrivate),
 			huh.NewConfirm().
 				Title("Enable mDNS?").
-				Description("Discover other ModelMesh proxies on the local LAN, in addition to the admin membership list.").
+				Description("Discover other Speakeasy proxies on the local LAN, in addition to the admin membership list.").
 				Affirmative("Yes").
 				Negative("No").
 				Value(&s.MDNSEnabled),

@@ -3,8 +3,8 @@ package modeldex
 import (
 	"time"
 
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 type LocalRoute struct {

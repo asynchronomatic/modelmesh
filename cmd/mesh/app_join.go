@@ -10,10 +10,10 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"modelmesh/api"
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
-	"modelmesh/pkg/mesh"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/mesh"
 )
 
 func runJoin(args []string) error {

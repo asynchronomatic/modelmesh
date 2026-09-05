@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"modelmesh/pkg/core"
-	"modelmesh/testable"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/testable"
 )
 
 var testProviders = []core.Provider{

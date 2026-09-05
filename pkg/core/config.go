@@ -5,7 +5,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 var DefaultRelayPort = 4001
