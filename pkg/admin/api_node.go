@@ -3,12 +3,18 @@ package admin
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
-	"modelmesh/pkg/log"
+	"golang.org/x/crypto/bcrypt"
 
 	"modelmesh/api"
+	"modelmesh/pkg/admin/auth"
+	"modelmesh/pkg/admin/magiclink"
+	"modelmesh/pkg/jsonkv"
+	"modelmesh/pkg/log"
 )
 
 func newNodeToken() string {
@@ -173,6 +179,75 @@ func (s *Server) apiRelayGet(ctx *JsonRPC) error {
 	return ctx.ReplyObject(&resp)
 }
 
-func (s *Server) apiNodeLogin(ctx *JsonRPC) error {
+type sessionClaims struct {
+	NodeID  string
+	Expires int64
+}
 
+func (s *Server) issueSessionToken(nodeID string, lifetime time.Duration) (string, int64, error) {
+	claims := sessionClaims{NodeID: nodeID}
+	if lifetime > 0 {
+		claims.Expires = time.Now().Add(lifetime).Unix()
+	}
+	raw, err := magiclink.New(s.magicKey).Encrypt(&claims)
+	if err != nil {
+		return "", 0, err
+	}
+	return auth.SessionTokenPrefix + raw, claims.Expires, nil
+}
+
+func (s *Server) authenticateSessionToken(token string) (*auth.Properties, error) {
+	if !strings.HasPrefix(token, auth.SessionTokenPrefix) {
+		return nil, errors.New("not a session token")
+	}
+	var claims sessionClaims
+	payload := strings.TrimPrefix(token, auth.SessionTokenPrefix)
+	if err := magiclink.New(s.magicKey).Decrypt(payload, &claims); err != nil {
+		return nil, err
+	}
+	if claims.NodeID == "" {
+		return nil, errors.New("invalid session")
+	}
+	if claims.Expires != 0 && time.Now().Unix() >= claims.Expires {
+		return nil, errors.New("session expired")
+	}
+	return &auth.Properties{User: claims.NodeID, Group: "mesh"}, nil
+}
+
+func (s *Server) apiNodeLogin(ctx *JsonRPC) error {
+	var req api.NodeLoginRequest
+	if err := ctx.GetObject(&req); err != nil {
+		return err
+	}
+	if req.NodeID == "" || req.MeshSecret == "" {
+		return api.NewError(http.StatusBadRequest, "node id and mesh secret are required")
+	}
+	meshID := req.MeshId
+	if meshID == "" {
+		meshID = "default"
+	}
+
+	var rec meshNodeRecord
+	if err := s.kv.Get(meshNodeKVKey(meshID, req.NodeID), &rec); err != nil {
+		if errors.Is(err, jsonkv.ErrNotFound) {
+			return api.NewError(http.StatusUnauthorized, "invalid credentials")
+		}
+		return err
+	}
+	if rec.PasswordHash == "" || bcrypt.CompareHashAndPassword([]byte(rec.PasswordHash), []byte(req.MeshSecret)) != nil {
+		return api.NewError(http.StatusUnauthorized, "invalid credentials")
+	}
+
+	// FIXME:  the session never expires but thats just bad, we should expire the session by requiring the
+	//         the client to once in a while use the mesh key to get a new one by doing another login
+	token, expires, err := s.issueSessionToken(req.NodeID, 0) // never expires for now, but we should fix this
+	if err != nil {
+		return err
+	}
+
+	return ctx.ReplyObject(&api.NodeLoginResponse{
+		Token:   token,
+		NodeID:  req.NodeID,
+		Expires: expires,
+	})
 }

@@ -456,7 +456,7 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 	}
 
 	// Auto authorize the host ( TODO: see if we can do this earlier, because the id is in the key )
-	err = mesh.Authorize(host.ID().String())
+	err = mesh.Login(host.ID().String(), mc.Secret)
 	if err != nil {
 		_ = host.Close()
 		return nil, fmt.Errorf("error authorizing host: %v", err)
@@ -476,8 +476,6 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 	}
 
 	m := &Service{
-		//Name:      mc.Name,
-		//ID:        host.ID().String(),
 		node:      node,
 		h:         host,
 		admin:     mesh,

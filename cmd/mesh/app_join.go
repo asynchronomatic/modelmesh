@@ -54,7 +54,9 @@ func runJoin(args []string) error {
 	fmt.Println()
 	fmt.Println("Next:")
 	fmt.Println("  mesh proxy    # start the local proxy on this mesh")
-	return nil
+
+	config := core.MustLoadConfig()
+	return runProxy(config)
 }
 
 func configFromInvite(resp *api.RedeemInviteResponse) *core.Config {

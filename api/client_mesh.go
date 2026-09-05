@@ -38,6 +38,18 @@ type GetRelayResponse struct {
 	LogicalTime  uint64
 }
 
+type NodeLoginRequest struct {
+	NodeID     string
+	MeshId     string
+	MeshSecret string
+}
+
+type NodeLoginResponse struct {
+	Token   string
+	NodeID  string
+	Expires int64
+}
+
 type MeshClient struct {
 	meshId    string
 	transport jsonclient.Transport
@@ -101,7 +113,24 @@ func (c *MeshClient) GetAddress() ([]string, error) {
 	return relay, err
 }
 
-// Authorize this client for access to the mesh
+// Login this client for access to the mesh
+func (c *MeshClient) Login(nodeID, meshSecret string) error {
+	req := NodeLoginRequest{
+		NodeID:     nodeID,
+		MeshId:     c.meshId,
+		MeshSecret: meshSecret,
+	}
+	resp := NodeLoginResponse{}
+	if err := c.transport.Post("/api/v1/login", &req, &resp); err != nil {
+		return err
+	}
+
+	//
+	c.transport.SetToken(resp.Token)
+	return nil
+}
+
+/*
 func (c *MeshClient) Authorize(id string) error {
 	req := RegisterNodeRequest{
 		Node: Node{
@@ -110,13 +139,13 @@ func (c *MeshClient) Authorize(id string) error {
 	}
 	var resp Node
 	return c.transport.Post("/api/v1/authorize", &req, &resp)
-}
+}*/
 
 func (c *MeshClient) Unregister(id string) error {
 	return c.transport.Delete(fmt.Sprintf("/api/v1/nodes/%s", id))
 }
 
-func (mc *MeshClient) Register(name string, id string) (*Registration, error) {
+func (c *MeshClient) Register(name string, id string) (*Registration, error) {
 	req := RegisterNodeRequest{
 		Node: Node{
 			Name: name,
@@ -125,12 +154,12 @@ func (mc *MeshClient) Register(name string, id string) (*Registration, error) {
 	}
 
 	resp := RegisterNodeResponse{}
-	err := mc.transport.Post("/api/v1/nodes", &req, &resp)
+	err := c.transport.Post("/api/v1/nodes", &req, &resp)
 	if err != nil {
 		return nil, err
 	}
 	return &Registration{
-		transport: mc.transport,
+		transport: c.transport,
 		node:      resp.Node,
 		token:     resp.Token,
 	}, nil

@@ -76,6 +76,7 @@ func nodeList(_ context.Context, cmd *cli.Command) error {
 }
 
 func nodeAuthorize(_ context.Context, cmd *cli.Command) error {
+	/* FIXME: deprecated
 	id, err := requireArg(cmd, "peer id")
 	if err != nil {
 		return err
@@ -88,6 +89,7 @@ func nodeAuthorize(_ context.Context, cmd *cli.Command) error {
 		return err
 	}
 	fmt.Fprintf(out(), "authorized %s\n", id)
+	*/
 	return nil
 }
 

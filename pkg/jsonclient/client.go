@@ -17,6 +17,7 @@ type Transport interface {
 	Post(path string, v any, r any) error
 	Put(path string, v any, r any) error
 	Delete(path string) error
+	SetToken(token string)
 }
 
 var ErrClientRequest = 800
@@ -116,6 +117,10 @@ func (c *Client) GetOpt(key string) string {
 func (c *Client) Close() error {
 	c.token = ""
 	return nil
+}
+
+func (c *Client) SetToken(token string) {
+	c.token = token
 }
 
 func (c *Client) WithDoer(rt Doer) *Client {

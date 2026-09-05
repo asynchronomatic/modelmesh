@@ -114,7 +114,7 @@ func (s *Server) authenticated(fn func(*JsonRPC) error) http.HandlerFunc {
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/login", s.authenticated(s.apiNodeLogin))
+	mux.HandleFunc("POST /api/v1/login", s.handle(s.apiNodeLogin))
 
 	mux.HandleFunc("GET /api/v1/relay", s.authenticated(s.apiRelayGet))
 	mux.HandleFunc("POST /api/v1/authorize", s.authenticated(s.apiNodeAuthorize))
@@ -248,7 +248,6 @@ func NewServer(listenAddress, adminKey string) (*Server, error) {
 
 	a := auth.NewTokenAuth()
 	a.AddUser("admin", "admin", adminKey)
-	//a.AddUser("mesh", "mesh", userKey)
 
 	s := &Server{
 		mainAddress: listenAddress,
@@ -259,6 +258,13 @@ func NewServer(listenAddress, adminKey string) (*Server, error) {
 		auth:        a,
 		magicKey:    magicKey,
 	}
+	a.SetSessionAuth(func(token string) (*auth.Properties, bool) {
+		props, err := s.authenticateSessionToken(token)
+		if err != nil {
+			return nil, false
+		}
+		return props, true
+	})
 
 	return s, nil
 }
