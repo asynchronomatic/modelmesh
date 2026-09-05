@@ -176,6 +176,7 @@ func (p *Proxy) OnPeerUpdate(peer core.PeerNode, remove bool) error {
 	log.WithName("proxy").Eventf("Adding peer models %+v", models)
 	p.modelRouter.AddPeerModels(peer, models)
 
+	p.notifier.Broadcast()
 	return nil
 }
 
@@ -228,6 +229,9 @@ func (p *Proxy) Serve(ctx context.Context) error {
 		ReadTimeout:  600 * time.Second,
 		TLSConfig:    &tls.Config{},
 	}
+
+	go p.notifier.Poll()
+
 	go func() {
 		err := svr.ListenAndServe()
 		if err != nil && errors.Is(err, http.ErrServerClosed) {
@@ -276,6 +280,9 @@ func NewProxy(meshService core.MeshServiceProvider, listen string, providers []c
 
 	p.mux.HandleFunc("GET /{$}", p.uiRootHandler)
 	p.mux.HandleFunc("GET /ui", p.uiHandler)
+
+	p.mux.HandleFunc("/api/v.1/refresh/websocket", p.notifier.Handle)
+
 	p.mux.Handle("GET /ui/", http.StripPrefix("/ui/", http.FileServer(uiFileSystem())))
 
 	p.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

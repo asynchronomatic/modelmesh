@@ -98,6 +98,15 @@ func LoadOrCreateKey(path string) (crypto.PrivKey, error) {
 	return priv, os.WriteFile(path, b, 0o600)
 }
 
+// NodeIDFromKey returns the libp2p peer ID string for a key from LoadOrCreateKey.
+func NodeIDFromKey(key crypto.PrivKey) (string, error) {
+	id, err := peer.IDFromPrivateKey(key)
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
+}
+
 func IsSource(r *http.Request) bool {
 	return r.Header.Get("X-Mesh") == "true"
 }

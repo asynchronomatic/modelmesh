@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
-	"regexp"
+	"path/filepath"
 	"strings"
 
 	"charm.land/huh/v2"
+	"github.com/goccy/go-yaml"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"modelmesh/api"
@@ -15,93 +16,79 @@ import (
 	"modelmesh/pkg/mesh"
 )
 
-func patchYAMLQuoted(src, key, value string) string {
-	re := regexp.MustCompile(`(?m)^([ \t]*)` + regexp.QuoteMeta(key) + `:\s*.*$`)
-	line := fmt.Sprintf("${1}%s: %q", key, value)
-	if re.MatchString(src) {
-		return re.ReplaceAllString(src, line)
+func runJoin(args []string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf("usage: %s join <invite-url>", os.Args[0])
 	}
-	return src
-}
-
-func writeJoinConfig(path, adminAddress, adminSecret string) error {
-	data, err := os.ReadFile(path)
+	existing, cont, err := existingJoinConfig()
 	if err != nil {
 		return err
 	}
-	out := patchYAMLQuoted(string(data), "admin_address", adminAddress)
-	out = patchYAMLQuoted(out, "admin_secret", adminSecret)
-	return os.WriteFile(path, []byte(out), 0o600)
-}
-
-func runJoin() error {
-	if !fileExists(defaultConfigPath) {
-		return fmt.Errorf("no %s found; run `mesh init` first", defaultConfigPath)
-	}
-
-	config, err := core.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("load %s: %w", defaultConfigPath, err)
-	}
-
-	adminAddress := config.Mesh.AdminAddress
-	adminSecret := config.Mesh.AdminKey
-	confirm := true
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Admin address").
-				Description("HTTP(S) URL of the existing mesh admin. That node must be public or port-forwarded so this machine can reach it.").
-				Placeholder(defaultAdminAddress).
-				Value(&adminAddress).
-				Validate(huh.ValidateNotEmpty()),
-			huh.NewInput().
-				Title("Admin secret").
-				Description("Shared admin secret for that mesh. Ask the operator of the admin node.").
-				Placeholder("required").
-				EchoMode(huh.EchoModePassword).
-				Value(&adminSecret).
-				Validate(huh.ValidateNotEmpty()),
-			huh.NewConfirm().
-				Title("Join this mesh?").
-				Description("Updates admin_address and admin_secret in config.yaml, then authorizes this node's identity with the admin API.").
-				Affirmative("Join").
-				Negative("Abort").
-				Value(&confirm),
-		).Title("Join mesh").Description("Connect this node to an existing ModelMesh admin/relay."),
-	).WithAccessible(os.Getenv("ACCESSIBLE") != "")
-
-	if err := form.Run(); err != nil {
-		if aborted(err) {
-			fmt.Println("Aborted.")
-			return nil
-		}
-		return err
-	}
-	if !confirm {
-		fmt.Println("Aborted.")
+	if !cont {
 		return nil
 	}
+	if err := joinWithInvite(strings.TrimSpace(args[0]), existing); err != nil {
+		return err
+	}
+	config := core.MustLoadConfig()
+	return runProxy(config)
+}
 
-	adminAddress = strings.TrimSpace(adminAddress)
-	adminSecret = strings.TrimSpace(adminSecret)
+func existingJoinConfig() (*core.Config, bool, error) {
+	if !fileExists(defaultConfigPath) {
+		return nil, true, nil
+	}
 
-	client, err := api.NewClient(adminAddress, adminSecret)
+	abs, err := filepath.Abs(defaultConfigPath)
 	if err != nil {
-		return fmt.Errorf("admin client: %w", err)
+		abs = defaultConfigPath
 	}
-
-	addrs, err := client.GetAddress()
+	cfg, err := core.LoadConfig()
 	if err != nil {
-		return fmt.Errorf("could not reach admin at %s (check address and secret): %w", adminAddress, err)
+		return nil, false, fmt.Errorf("load %s: %w", defaultConfigPath, err)
 	}
 
-	if err := writeJoinConfig(defaultConfigPath, adminAddress, adminSecret); err != nil {
-		return fmt.Errorf("update %s: %w", defaultConfigPath, err)
+	cont := false
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("config.yaml already exists in this directory.").
+				Description(existingJoinWarning(abs, cfg)).
+				Affirmative("Continue").
+				Negative("Abort").
+				Value(&cont),
+		),
+	).WithAccessible(os.Getenv("ACCESSIBLE") != "").Run()
+	if aborted(err) {
+		fmt.Println("Aborted.")
+		return nil, false, nil
 	}
-	log.Infof("updated %s\n", defaultConfigPath)
+	if err != nil {
+		return nil, false, err
+	}
+	if !cont {
+		fmt.Println("Aborted.")
+		return nil, false, nil
+	}
+	return cfg, true, nil
+}
 
+func existingJoinWarning(abs string, cfg *core.Config) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Found %s\n", abs)
+	fmt.Fprintf(&b, "Working directory: %s\n", cwd)
+	if cfg != nil && (cfg.Mesh.MeshId != "" || cfg.Mesh.Address != "") {
+		fmt.Fprintf(&b, "Current mesh: %s @ %s\n", cfg.Mesh.MeshId, cfg.Mesh.Address)
+	}
+	b.WriteString("If this is the wrong directory, abort now — redeeming the invite cannot be undone and will replace mesh address, mesh id, and secret in this config.")
+	return b.String()
+}
+
+func joinWithInvite(link string, existing *core.Config) error {
 	key, err := mesh.LoadOrCreateKey(defaultNodeKeyPath)
 	if err != nil {
 		return fmt.Errorf("node key: %w", err)
@@ -111,22 +98,67 @@ func runJoin() error {
 		return fmt.Errorf("peer id: %w", err)
 	}
 
-	if err := client.Authorize(id.String()); err != nil {
-		return fmt.Errorf("authorize %s: %w", id, err)
+	name, _ := os.Hostname()
+	if existing != nil && strings.TrimSpace(existing.Mesh.Name) != "" {
+		name = existing.Mesh.Name
+	}
+	resp, err := api.RedeemInvite(link, api.Node{ID: id.String(), Name: name})
+	if err != nil {
+		return fmt.Errorf("redeem invite: %w", err)
 	}
 
+	cfg := configFromInvite(resp, existing)
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	if err := os.WriteFile(defaultConfigPath, data, 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", defaultConfigPath, err)
+	}
+
+	log.Infof("wrote %s\n", defaultConfigPath)
 	fmt.Println()
 	fmt.Println("Joined mesh.")
-	fmt.Printf("  admin:    %s\n", adminAddress)
+	fmt.Printf("  config:   %s\n", defaultConfigPath)
 	fmt.Printf("  peer id:  %s\n", id)
-	if len(addrs) > 0 {
-		fmt.Println("  relays:")
-		for _, a := range addrs {
-			fmt.Printf("    %s\n", a)
-		}
-	}
+	fmt.Printf("  mesh id:  %s\n", cfg.Mesh.MeshId)
+	fmt.Printf("  address:  %s\n", cfg.Mesh.Address)
 	fmt.Println()
 	fmt.Println("Next:")
 	fmt.Println("  mesh proxy    # start the local proxy on this mesh")
 	return nil
+}
+
+func configFromInvite(resp *api.RedeemInviteResponse, existing *core.Config) *core.Config {
+	var cfg *core.Config
+	if existing != nil {
+		cp := *existing
+		cfg = &cp
+	} else {
+		cfg = defaultJoinConfig()
+	}
+	cfg.Mesh.Address = strings.TrimSpace(resp.MeshServer)
+	cfg.Mesh.Secret = resp.MeshSecret
+	cfg.Mesh.MeshId = resp.MeshId
+	return cfg
+}
+
+func defaultJoinConfig() *core.Config {
+	cfg := &core.Config{}
+	cfg.Proxy.Listen = core.DefaultProxyListen
+	cfg.Admin.AdminPort = core.DefaultAdminPort
+	cfg.Admin.RelayPort = core.DefaultRelayPort
+	cfg.Admin.PublicAddress = "auto"
+	cfg.Mesh.PublicAddress = "auto"
+	cfg.Mesh.Port = 0
+	cfg.Mesh.ForcePrivate = false
+	cfg.Mesh.MDNSEnabled = true
+	cfg.Mesh.Name, _ = os.Hostname()
+	cfg.Providers = []core.Provider{{
+		ID:        "localhost",
+		Type:      "ollama",
+		BaseURL:   "http://127.0.0.1:11434",
+		Discovery: "pinned",
+	}}
+	return cfg
 }

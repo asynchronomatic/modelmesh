@@ -1,13 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-	p2prelay "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
-
-	"modelmesh/pkg/admin"
 	"modelmesh/pkg/core"
 	"modelmesh/pkg/log"
 	"modelmesh/pkg/mesh"
@@ -23,6 +18,11 @@ func runProxy(config *core.Config) error {
 	return core.RunInterruptible(p)
 }
 
+func runHybrid(config *core.Config) error {
+	return fmt.Errorf("hybrid mode not implemented")
+}
+
+/*
 func runHybrid(config *core.Config) error {
 	// load our node key (or create a new one)
 	key, err := mesh.LoadOrCreateKey("node.key")
@@ -89,3 +89,4 @@ func runHybrid(config *core.Config) error {
 	p, _ := proxy.NewProxy(service, config.Proxy.Listen, config.Providers)
 	return core.RunInterruptible(p)
 }
+*/

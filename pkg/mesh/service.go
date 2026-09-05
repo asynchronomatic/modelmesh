@@ -44,12 +44,10 @@ const (
 type Service struct {
 	node core.PeerNode
 
-	//Name      string
-	//ID        string
 	h         host.Host
 	res       *client.Reservation
 	relayInfo []peer.AddrInfo
-	admin     *api.Client
+	admin     *api.MeshClient
 	peers     map[string]peer.ID
 	handler   http.HandlerFunc
 	config    *core.MeshConfig
@@ -376,7 +374,7 @@ func (m *Service) Disconnect() error {
 }
 
 func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, error) {
-	admin, err := api.NewClient(mc.AdminAddress, mc.AdminKey)
+	mesh, err := api.NewClient(mc.Address, mc.Secret).Mesh("default")
 	if err != nil {
 		return nil, fmt.Errorf("could open mesh admin client. err:%v\n", err)
 	}
@@ -387,8 +385,18 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 		return nil, err
 	}
 
+	nodeID, err := NodeIDFromKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	err = mesh.Login(nodeID, mc.Secret)
+	if err != nil {
+		return nil, fmt.Errorf("could not login to mesh. err:%v\n", err)
+	}
+
 	// Retrieve the bootstrap address of our public relays
-	btAddress, err := admin.GetAddress()
+	btAddress, err := mesh.GetAddress()
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +411,7 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 		libp2p.Identity(key),
 		libp2p.ListenAddrStrings(
 			// Note: App side does not need a specific port ( this can be set in config to 0 )
-			fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", mc.AppPort),
+			fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", mc.Port),
 			//fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", mc.AppPort),
 			"/p2p-circuit",
 		),
@@ -458,7 +466,7 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 	}
 
 	// Auto authorize the host ( TODO: see if we can do this earlier, because the id is in the key )
-	err = admin.Authorize(host.ID().String())
+	err = mesh.Login(host.ID().String(), mc.Secret)
 	if err != nil {
 		_ = host.Close()
 		return nil, fmt.Errorf("error authorizing host: %v", err)
@@ -478,18 +486,16 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 	}
 
 	m := &Service{
-		//Name:      mc.Name,
-		//ID:        host.ID().String(),
 		node:      node,
 		h:         host,
-		admin:     admin,
+		admin:     mesh,
 		relayInfo: relayInfo,
 		peers:     make(map[string]peer.ID),
 		handler: func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not implemented", http.StatusNotImplemented)
 		},
 		config:    mc,
-		discovery: NewDiscoveryManager(admin, host, node, mc.MDNSEnabled),
+		discovery: NewDiscoveryManager(mesh, host, node, mc.MDNSEnabled),
 	}
 
 	host.SetStreamHandler(OllamaProtocol, m.streamHandler)

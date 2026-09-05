@@ -112,4 +112,5 @@ node.key
 relay.key
 config.yaml
 allow.list
+admin.jkv/
 Makefile.local

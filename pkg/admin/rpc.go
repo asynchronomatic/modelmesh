@@ -3,12 +3,15 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+
+	"modelmesh/api"
+	"modelmesh/pkg/admin/auth"
 )
 
 type JsonRPC struct {
 	w    http.ResponseWriter
 	r    *http.Request
-	user string
+	user *auth.Properties
 }
 
 func (c *JsonRPC) Request() *http.Request {
@@ -16,7 +19,11 @@ func (c *JsonRPC) Request() *http.Request {
 }
 
 func (c *JsonRPC) User() string {
-	return c.user
+	return c.user.User
+}
+
+func (c *JsonRPC) Group() string {
+	return c.user.Group
 }
 
 func (c *JsonRPC) PathVar(name string) string {
@@ -25,7 +32,11 @@ func (c *JsonRPC) PathVar(name string) string {
 
 func (c *JsonRPC) GetObject(obj any) error {
 	defer c.r.Body.Close()
-	return json.NewDecoder(c.r.Body).Decode(obj)
+	err := json.NewDecoder(c.r.Body).Decode(obj)
+	if err != nil {
+		return api.NewError(http.StatusBadRequest, "bad request")
+	}
+	return nil
 }
 
 func (c *JsonRPC) ReplyObject(obj any) error {

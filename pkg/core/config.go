@@ -10,7 +10,7 @@ import (
 
 var DefaultRelayPort = 4001
 var DefaultAdminPort = 4002
-var DefaultProxyListen = ":8080"
+var DefaultProxyListen = ":4080"
 
 type ModelConfig struct {
 	Model        string
@@ -40,40 +40,46 @@ type EnabledModel struct {
 	}
 }
 
-type MeshConfig struct {
-	Name         string `yaml:"name"`
-	AdminAddress string `yaml:"admin_address"`
-	AdminKey     string `yaml:"admin_secret"`
-	AdminPort    int    `yaml:"admin_port"`
-	RelayPort    int    `yaml:"relay_port"`
-
+type AdminConfig struct {
+	Address       string `yaml:"address"`
+	Secret        string `yaml:"secret"`
+	AdminPort     int    `yaml:"admin_port"`
+	RelayPort     int    `yaml:"relay_port"`
 	PublicAddress string `yaml:"public_address"`
+}
 
-	AppPort      int  `yaml:"app_port"`
-	ForcePrivate bool `yaml:"force_private"`
-	MDNSEnabled  bool `yaml:"mdns_enabled"`
+type MeshConfig struct {
+	Name          string `yaml:"name"`
+	Address       string `yaml:"address"`
+	Secret        string `yaml:"secret"`
+	MeshId        string `yaml:"mesh_id"`
+	PublicAddress string `yaml:"public_address"`
+	Port          int    `yaml:"port"`
+	ForcePrivate  bool   `yaml:"force_private"`
+	MDNSEnabled   bool   `yaml:"mdns_enabled"`
 }
 
 type Config struct {
 	Proxy struct {
 		Listen string `yaml:"listen"`
-	}
-	Mesh      MeshConfig
-	Providers []Provider
+	} `yaml:"proxy"`
+	Admin     AdminConfig `yaml:"admin"`
+	Mesh      MeshConfig  `yaml:"mesh"`
+	Providers []Provider  `yaml:"providers"`
 }
 
 func applyConfigDefaults(config *Config) {
 	if config.Proxy.Listen == "" {
 		config.Proxy.Listen = DefaultProxyListen
 	}
-	if config.Mesh.RelayPort <= 0 {
-		config.Mesh.RelayPort = DefaultRelayPort
+	if config.Admin.RelayPort <= 0 {
+		config.Admin.RelayPort = DefaultRelayPort
 	}
-	if config.Mesh.AppPort <= 0 {
-		config.Mesh.AppPort = 0
+	if config.Mesh.Port <= 0 {
+		config.Mesh.Port = 0
 	}
-	if config.Mesh.AdminPort <= 0 {
-		config.Mesh.AdminPort = DefaultAdminPort
+	if config.Admin.AdminPort <= 0 {
+		config.Admin.AdminPort = DefaultAdminPort
 	}
 	if config.Mesh.Name == "" {
 		config.Mesh.Name, _ = os.Hostname()
@@ -102,7 +108,7 @@ func MustLoadConfig() *Config {
 		log.Fatalf("Could not load config.yaml  (Err:%v)\n", err)
 	}
 
-	if config.Mesh.AdminAddress == "" {
+	if config.Mesh.Address == "" {
 		log.Fatalf("Mesh.Address must be set in config.yaml")
 	}
 
