@@ -125,6 +125,25 @@ func TestAppJSUsesNewUIModelFields(t *testing.T) {
 	}
 }
 
+func TestAppJSUsesRefreshWebsocket(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(webDir(), "js", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "/api/v.1/refresh/websocket") {
+		t.Fatal("app.js should connect to /api/v.1/refresh/websocket")
+	}
+	if !strings.Contains(s, "new WebSocket") {
+		t.Fatal("app.js should open a WebSocket for refresh")
+	}
+	for _, old := range []string{"setInterval(refresh", "POLL_MS"} {
+		if strings.Contains(s, old) {
+			t.Fatalf("app.js still polls with %s", old)
+		}
+	}
+}
+
 func TestCapabilityStrings(t *testing.T) {
 	got := capabilityStrings([]model.Capability{
 		"completion",
