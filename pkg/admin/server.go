@@ -127,7 +127,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/admin/invite/{id}", s.authenticated(s.asAdmin(s.adminDeleteInviteLink)))
 
 	// redeem is public since it's getting a magic link
-	mux.HandleFunc("POST /redeem/{id}", s.handle(s.adminRedeemInviteLink))
+	mux.HandleFunc("POST /api/v1/redeem/{id}", s.handle(s.adminRedeemInviteLink))
 
 	mux.HandleFunc("/", notFoundHandler)
 	return mux

@@ -105,7 +105,7 @@ func TestAdminCreateInviteLink(t *testing.T) {
 		OneTime:     true,
 		LifetimeSec: 3600,
 	})
-	wantLink := "https://mesh.example:4002/redeem/" + resp.InviteId
+	wantLink := "https://mesh.example:4002/api/v1/redeem/" + resp.InviteId
 	if resp.InviteLink != wantLink {
 		t.Fatalf("InviteLink=%q want %q", resp.InviteLink, wantLink)
 	}
@@ -133,7 +133,7 @@ func TestAdminCreateInviteLinkForever(t *testing.T) {
 	if stored.Expires != 0 || stored.OneTime {
 		t.Fatalf("forever invite %+v", stored)
 	}
-	if !strings.HasSuffix(resp.InviteLink, "/redeem/"+resp.InviteId) {
+	if !strings.HasSuffix(resp.InviteLink, "/api/v1/redeem/"+resp.InviteId) {
 		t.Fatalf("InviteLink=%q", resp.InviteLink)
 	}
 }
@@ -151,7 +151,7 @@ func TestAdminRedeemInviteLink(t *testing.T) {
 	s, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", Name: "guest"})
 
-	res := postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
+	res := postJSON(t, ts, http.MethodPost, "/api/v1/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
 		Node: api.Node{ID: "peer-redeem-1"},
 	})
 	if res.StatusCode != http.StatusOK {
@@ -187,7 +187,7 @@ func TestAdminRedeemInviteLink(t *testing.T) {
 		t.Fatalf("password hash does not match returned secret: %v", err)
 	}
 
-	res = postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
+	res = postJSON(t, ts, http.MethodPost, "/api/v1/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
 		Node: api.Node{ID: "peer-redeem-2"},
 	})
 	if res.StatusCode != http.StatusOK {
@@ -200,7 +200,7 @@ func TestAdminRedeemOneTimeInvite(t *testing.T) {
 	s, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", OneTime: true})
 
-	res := postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
+	res := postJSON(t, ts, http.MethodPost, "/api/v1/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
 		Node: api.Node{ID: "peer-once-1", Name: "n1"},
 	})
 	if res.StatusCode != http.StatusOK {
@@ -226,7 +226,7 @@ func TestAdminRedeemOneTimeInvite(t *testing.T) {
 		t.Fatalf("one-time invite still stored: %v %+v", err, stored)
 	}
 
-	res = postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
+	res = postJSON(t, ts, http.MethodPost, "/api/v1/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
 		Node: api.Node{ID: "peer-once-2", Name: "n2"},
 	})
 	res.Body.Close()
@@ -252,7 +252,7 @@ func TestAdminRedeemExpiredInvite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res := postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
+	res := postJSON(t, ts, http.MethodPost, "/api/v1/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
 		Node: api.Node{ID: "peer-expired-1", Name: "n1"},
 	})
 	res.Body.Close()
@@ -269,7 +269,7 @@ func TestAdminRedeemExpiredInvite(t *testing.T) {
 
 func TestAdminRedeemInvalidInvite(t *testing.T) {
 	_, ts := newAdminTestServer(t)
-	res := postJSON(t, ts, http.MethodPost, "/redeem/not-a-valid-token", "", api.RedeemInviteRequest{
+	res := postJSON(t, ts, http.MethodPost, "/api/v1/redeem/not-a-valid-token", "", api.RedeemInviteRequest{
 		Node: api.Node{ID: "peer-1"},
 	})
 	res.Body.Close()
@@ -282,7 +282,7 @@ func TestRedeemInviteClient(t *testing.T) {
 	s, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
 
-	resp, err := api.RedeemInvite(ts.URL+"/redeem/"+created.InviteId, api.Node{ID: "peer-client-1", Name: "n1"})
+	resp, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-client-1", Name: "n1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestAdminDeleteInviteLink(t *testing.T) {
 		t.Fatalf("invite still stored: %v %+v", err, stored)
 	}
 
-	res2 := postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
+	res2 := postJSON(t, ts, http.MethodPost, "/api/v1/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
 		Node: api.Node{ID: "peer-deleted-1"},
 	})
 	res2.Body.Close()
@@ -379,7 +379,7 @@ func TestAdminDeleteInviteClient(t *testing.T) {
 func TestAdminRedeemRequiresNodeID(t *testing.T) {
 	_, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
-	res := postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{})
+	res := postJSON(t, ts, http.MethodPost, "/api/v1/redeem/"+created.InviteId, "", api.RedeemInviteRequest{})
 	res.Body.Close()
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("missing node id: got %d want 400", res.StatusCode)

@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"charm.land/huh/v2"
 	"github.com/goccy/go-yaml"
 	"github.com/libp2p/go-libp2p/core/peer"
 
@@ -18,8 +20,75 @@ func runJoin(args []string) error {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
 		return fmt.Errorf("usage: %s join <invite-url>", os.Args[0])
 	}
-	link := strings.TrimSpace(args[0])
+	existing, cont, err := existingJoinConfig()
+	if err != nil {
+		return err
+	}
+	if !cont {
+		return nil
+	}
+	if err := joinWithInvite(strings.TrimSpace(args[0]), existing); err != nil {
+		return err
+	}
+	config := core.MustLoadConfig()
+	return runProxy(config)
+}
 
+func existingJoinConfig() (*core.Config, bool, error) {
+	if !fileExists(defaultConfigPath) {
+		return nil, true, nil
+	}
+
+	abs, err := filepath.Abs(defaultConfigPath)
+	if err != nil {
+		abs = defaultConfigPath
+	}
+	cfg, err := core.LoadConfig()
+	if err != nil {
+		return nil, false, fmt.Errorf("load %s: %w", defaultConfigPath, err)
+	}
+
+	cont := false
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("config.yaml already exists in this directory.").
+				Description(existingJoinWarning(abs, cfg)).
+				Affirmative("Continue").
+				Negative("Abort").
+				Value(&cont),
+		),
+	).WithAccessible(os.Getenv("ACCESSIBLE") != "").Run()
+	if aborted(err) {
+		fmt.Println("Aborted.")
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if !cont {
+		fmt.Println("Aborted.")
+		return nil, false, nil
+	}
+	return cfg, true, nil
+}
+
+func existingJoinWarning(abs string, cfg *core.Config) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Found %s\n", abs)
+	fmt.Fprintf(&b, "Working directory: %s\n", cwd)
+	if cfg != nil && (cfg.Mesh.MeshId != "" || cfg.Mesh.Address != "") {
+		fmt.Fprintf(&b, "Current mesh: %s @ %s\n", cfg.Mesh.MeshId, cfg.Mesh.Address)
+	}
+	b.WriteString("If this is the wrong directory, abort now — redeeming the invite cannot be undone and will replace mesh address, mesh id, and secret in this config.")
+	return b.String()
+}
+
+func joinWithInvite(link string, existing *core.Config) error {
 	key, err := mesh.LoadOrCreateKey(defaultNodeKeyPath)
 	if err != nil {
 		return fmt.Errorf("node key: %w", err)
@@ -30,12 +99,15 @@ func runJoin(args []string) error {
 	}
 
 	name, _ := os.Hostname()
+	if existing != nil && strings.TrimSpace(existing.Mesh.Name) != "" {
+		name = existing.Mesh.Name
+	}
 	resp, err := api.RedeemInvite(link, api.Node{ID: id.String(), Name: name})
 	if err != nil {
 		return fmt.Errorf("redeem invite: %w", err)
 	}
 
-	cfg := configFromInvite(resp)
+	cfg := configFromInvite(resp, existing)
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
@@ -54,20 +126,29 @@ func runJoin(args []string) error {
 	fmt.Println()
 	fmt.Println("Next:")
 	fmt.Println("  mesh proxy    # start the local proxy on this mesh")
-
-	config := core.MustLoadConfig()
-	return runProxy(config)
+	return nil
 }
 
-func configFromInvite(resp *api.RedeemInviteResponse) *core.Config {
+func configFromInvite(resp *api.RedeemInviteResponse, existing *core.Config) *core.Config {
+	var cfg *core.Config
+	if existing != nil {
+		cp := *existing
+		cfg = &cp
+	} else {
+		cfg = defaultJoinConfig()
+	}
+	cfg.Mesh.Address = strings.TrimSpace(resp.MeshServer)
+	cfg.Mesh.Secret = resp.MeshSecret
+	cfg.Mesh.MeshId = resp.MeshId
+	return cfg
+}
+
+func defaultJoinConfig() *core.Config {
 	cfg := &core.Config{}
 	cfg.Proxy.Listen = core.DefaultProxyListen
 	cfg.Admin.AdminPort = core.DefaultAdminPort
 	cfg.Admin.RelayPort = core.DefaultRelayPort
 	cfg.Admin.PublicAddress = "auto"
-	cfg.Mesh.Address = strings.TrimSpace(resp.MeshServer)
-	cfg.Mesh.Secret = resp.MeshSecret
-	cfg.Mesh.MeshId = resp.MeshId
 	cfg.Mesh.PublicAddress = "auto"
 	cfg.Mesh.Port = 0
 	cfg.Mesh.ForcePrivate = false

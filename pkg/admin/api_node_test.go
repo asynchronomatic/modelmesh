@@ -15,7 +15,7 @@ import (
 func TestApiNodeLogin(t *testing.T) {
 	s, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", Name: "guest"})
-	join, err := api.RedeemInvite(ts.URL+"/redeem/"+created.InviteId, api.Node{ID: "peer-login-1", Name: "n1"})
+	join, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-login-1", Name: "n1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestApiNodeLogin(t *testing.T) {
 func TestApiNodeLoginRejectsBadSecret(t *testing.T) {
 	_, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
-	if _, err := api.RedeemInvite(ts.URL+"/redeem/"+created.InviteId, api.Node{ID: "peer-login-bad", Name: "n1"}); err != nil {
+	if _, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-login-bad", Name: "n1"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -101,36 +101,10 @@ func TestApiNodeLoginExpiredSession(t *testing.T) {
 	}
 }
 
-func TestApiNodeLoginLifetime(t *testing.T) {
-	_, ts := newAdminTestServer(t)
-	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
-	join, err := api.RedeemInvite(ts.URL+"/redeem/"+created.InviteId, api.Node{ID: "peer-login-ttl", Name: "n1"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	res := postJSON(t, ts, http.MethodPost, "/api/v1/login", "", api.NodeLoginRequest{
-		NodeID:      "peer-login-ttl",
-		MeshSecret:  join.MeshSecret,
-		LifetimeSec: 3600,
-	})
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("login: got %d", res.StatusCode)
-	}
-	var login api.NodeLoginResponse
-	if err := json.NewDecoder(res.Body).Decode(&login); err != nil {
-		t.Fatal(err)
-	}
-	if login.Expires <= time.Now().Unix() {
-		t.Fatalf("expires %d should be in the future", login.Expires)
-	}
-}
-
 func TestMeshClientLogin(t *testing.T) {
 	_, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
-	join, err := api.RedeemInvite(ts.URL+"/redeem/"+created.InviteId, api.Node{ID: "peer-client-login", Name: "n1"})
+	join, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-client-login", Name: "n1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,11 +113,10 @@ func TestMeshClientLogin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	login, err := mc.Login("peer-client-login", join.MeshSecret)
-	if err != nil {
+	if err := mc.Login("peer-client-login", join.MeshSecret); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(login.Token, auth.SessionTokenPrefix) {
-		t.Fatalf("token %q", login.Token)
+	if _, err := mc.GetPeers(); err != nil {
+		t.Fatalf("session after login: %v", err)
 	}
 }

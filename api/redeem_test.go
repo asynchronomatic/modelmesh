@@ -30,11 +30,11 @@ func TestRedeemInvite(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	token := "abc-invite-token"
-	resp, err := RedeemInvite(ts.URL+"/redeem/"+token, Node{ID: "peer-1", Name: "n1"})
+	resp, err := RedeemInvite(ts.URL+"/api/v1/redeem/"+token, Node{ID: "peer-1", Name: "n1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/redeem/"+token {
+	if gotPath != "/api/v1/redeem/"+token {
 		t.Fatalf("path %q", gotPath)
 	}
 	if gotReq.Node.ID != "peer-1" || gotReq.Node.Name != "n1" {
@@ -47,36 +47,36 @@ func TestRedeemInvite(t *testing.T) {
 }
 
 func TestRedeemInviteRequiresNodeID(t *testing.T) {
-	_, err := RedeemInvite("http://example:4002/redeem/x", Node{})
+	_, err := RedeemInvite("http://example:4002/api/v1/redeem/x", Node{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestRedeemInviteInvalidURL(t *testing.T) {
-	_, err := RedeemInvite("/redeem/x", Node{ID: "peer-1"})
+	_, err := RedeemInvite("/api/v1/redeem/x", Node{ID: "peer-1"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestParseInviteURLMissingSlash(t *testing.T) {
-	u, err := parseInviteURL("http:/10.0.0.30:4002/redeem/832beddac28840510e73979e378ce5d14d7ede3aa2ea53aa718a445464d6b830")
+	u, err := parseInviteURL("http:/10.0.0.30:4002/api/v1/redeem/832beddac28840510e73979e378ce5d14d7ede3aa2ea53aa718a445464d6b830")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if u.Scheme != "http" || u.Host != "10.0.0.30:4002" {
 		t.Fatalf("got scheme=%q host=%q", u.Scheme, u.Host)
 	}
-	if u.Path != "/redeem/832beddac28840510e73979e378ce5d14d7ede3aa2ea53aa718a445464d6b830" {
+	if u.Path != "/api/v1/redeem/832beddac28840510e73979e378ce5d14d7ede3aa2ea53aa718a445464d6b830" {
 		t.Fatalf("path %q", u.Path)
 	}
 
-	u, err = parseInviteURL("https:/example.com:4002/redeem/abc")
+	u, err = parseInviteURL("https:/example.com:4002/api/v1/redeem/abc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u.Scheme != "https" || u.Host != "example.com:4002" || u.Path != "/redeem/abc" {
+	if u.Scheme != "https" || u.Host != "example.com:4002" || u.Path != "/api/v1/redeem/abc" {
 		t.Fatalf("got %+v", u)
 	}
 }
@@ -87,7 +87,7 @@ func TestRedeemInviteHTTPError(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	_, err := RedeemInvite(ts.URL+"/redeem/expired", Node{ID: "peer-1"})
+	_, err := RedeemInvite(ts.URL+"/api/v1/redeem/expired", Node{ID: "peer-1"})
 	if err == nil {
 		t.Fatal("expected error")
 	}

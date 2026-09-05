@@ -121,7 +121,7 @@ func (s *Server) adminCreateInviteLink(ctx *JsonRPC) error {
 	base := strings.TrimRight(s.advertiseURL, "/")
 	resp := api.CreateInviteResponse{
 		InviteId:   inviteID,
-		InviteLink: fmt.Sprintf("%s/redeem/%s", base, inviteID),
+		InviteLink: fmt.Sprintf("%s/api/v1/redeem/%s", base, inviteID),
 	}
 	return ctx.ReplyObject(&resp)
 }

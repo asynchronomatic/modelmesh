@@ -10,7 +10,7 @@ import (
 
 var DefaultRelayPort = 4001
 var DefaultAdminPort = 4002
-var DefaultProxyListen = ":8080"
+var DefaultProxyListen = ":4080"
 
 type ModelConfig struct {
 	Model        string

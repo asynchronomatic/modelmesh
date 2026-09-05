@@ -385,6 +385,16 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 		return nil, err
 	}
 
+	nodeID, err := NodeIDFromKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	err = mesh.Login(nodeID, mc.Secret)
+	if err != nil {
+		return nil, fmt.Errorf("could not login to mesh. err:%v\n", err)
+	}
+
 	// Retrieve the bootstrap address of our public relays
 	btAddress, err := mesh.GetAddress()
 	if err != nil {
