@@ -1,5 +1,5 @@
 (() => {
-  const POLL_MS = 5000;
+  const REFRESH_WS_PATH = "/api/v.1/refresh/websocket";
 
   const state = {
     view: "welcome",
@@ -1007,6 +1007,47 @@
     }
   }
 
+  let refreshTimer = null;
+  function scheduleRefresh() {
+    if (refreshTimer) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      refresh();
+    }, 50);
+  }
+
+  function refreshSocketURL() {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return proto + "//" + window.location.host + REFRESH_WS_PATH;
+  }
+
+  function connectRefreshSocket() {
+    let delay = 1000;
+    function connect() {
+      let socket;
+      try {
+        socket = new WebSocket(refreshSocketURL());
+      } catch (err) {
+        console.error(err);
+        setTimeout(connect, delay);
+        delay = Math.min(delay * 2, 15000);
+        return;
+      }
+      socket.addEventListener("open", () => {
+        delay = 1000;
+      });
+      socket.addEventListener("message", () => {
+        scheduleRefresh();
+      });
+      socket.addEventListener("close", () => {
+        setStatus("loading", "Reconnecting");
+        setTimeout(connect, delay);
+        delay = Math.min(delay * 2, 15000);
+      });
+    }
+    connect();
+  }
+
   document.querySelectorAll(".sidebar-item").forEach((btn) => {
     btn.addEventListener("click", () => showView(btn.dataset.view));
   });
@@ -1102,5 +1143,5 @@
   renderChatThread();
   updateChatControls();
   refresh();
-  setInterval(refresh, POLL_MS);
+  connectRefreshSocket();
 })();

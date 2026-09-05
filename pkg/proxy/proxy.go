@@ -147,8 +147,11 @@ func (p *Proxy) OnPeerUpdate(peer core.PeerNode, remove bool) error {
 	// fetch models from peer
 	if remove {
 		p.modelRouter.RemovePeer(peer)
+		p.notifier.Broadcast()
 		return nil
 	}
+
+	p.notifier.Broadcast()
 
 	// Peers that registered at the same time are often not dialable yet
 	// (circuit reservation / swarm backoff). Retry before giving up;
