@@ -5455,6 +5455,104 @@ input[type="date"]:focus {
   flex-shrink: 0;
 }
 
+.modal-card.modal-card-invite {
+  max-width: 440px;
+  max-height: none;
+}
+
+#admin-invite-modal .admin-field {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+#admin-invite-modal .admin-field input,
+#admin-invite-modal .admin-field .select-input {
+  width: 100%;
+}
+
+#admin-invite-modal .admin-check {
+  padding-bottom: 0;
+  margin-bottom: 8px;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.admin-field span,
+.admin-check span {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.admin-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  font-size: 0.86rem;
+}
+
+.admin-created {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+
+.invite-link-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.invite-link-cell code {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.admin-created .invite-link-cell code {
+  flex: none;
+}
+
+.admin-section {
+  margin-bottom: 28px;
+}
+
+.admin-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.admin-section-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.admin-error {
+  color: #e07070;
+  font-size: 0.85rem;
+  margin: 0 0 12px;
+}
+
+#view-admin.view.active {
+  overflow: auto;
+}
+
 .settings-yaml {
   flex: 1;
   min-height: 0;

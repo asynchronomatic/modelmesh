@@ -301,6 +301,333 @@ func TestRedeemInviteClient(t *testing.T) {
 	}
 }
 
+func TestAdminListInviteLinks(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	a := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", Name: "guest", OneTime: true})
+	b := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
+
+	res := postJSON(t, ts, http.MethodGet, "/api/v1/admin/invite", "test-secret", nil)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list invites: got %d", res.StatusCode)
+	}
+	var listed api.ListInvitesResponse
+	if err := json.NewDecoder(res.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Invites) != 2 {
+		t.Fatalf("listed %d, want 2: %+v", len(listed.Invites), listed.Invites)
+	}
+	byID := map[string]api.InviteInfo{}
+	for _, inv := range listed.Invites {
+		byID[inv.InviteId] = inv
+	}
+	ga := byID[a.InviteId]
+	if ga.InviteLink != a.InviteLink || ga.Name != "guest" || !ga.OneTime {
+		t.Fatalf("invite a %+v", ga)
+	}
+	gb := byID[b.InviteId]
+	if gb.InviteLink != b.InviteLink || gb.OneTime || gb.Expires != 0 {
+		t.Fatalf("invite b %+v", gb)
+	}
+}
+
+func TestAdminListInviteLinksSkipsExpired(t *testing.T) {
+	s, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", LifetimeSec: 3600})
+	key := inviteKVKey("default", created.InviteId)
+	var stored inviteSecret
+	if err := s.kv.Get(key, &stored); err != nil {
+		t.Fatal(err)
+	}
+	stored.Expires = time.Now().Add(-time.Minute).Unix()
+	if err := s.kv.Put(key, stored); err != nil {
+		t.Fatal(err)
+	}
+
+	res := postJSON(t, ts, http.MethodGet, "/api/v1/admin/invite", "test-secret", nil)
+	defer res.Body.Close()
+	var listed api.ListInvitesResponse
+	if err := json.NewDecoder(res.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Invites) != 0 {
+		t.Fatalf("expired still listed: %+v", listed.Invites)
+	}
+	if err := s.kv.Get(key, &stored); !errors.Is(err, jsonkv.ErrNotFound) {
+		t.Fatalf("expired invite still stored: %v", err)
+	}
+}
+
+func TestAdminListInviteLinksRequiresAuth(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	res := postJSON(t, ts, http.MethodGet, "/api/v1/admin/invite", "", nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated list: got %d want 401", res.StatusCode)
+	}
+}
+
+func TestAdminListInviteClient(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", Name: "n1"})
+	listed, err := api.NewClient(ts.URL, "test-secret").Admin().ListInvites()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Invites) != 1 || listed.Invites[0].InviteId != created.InviteId {
+		t.Fatalf("listed %+v", listed.Invites)
+	}
+}
+
+func TestAdminKickPeer(t *testing.T) {
+	s, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", Name: "guest"})
+	if _, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-kick-1", Name: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := postJSON(t, ts, http.MethodPost, "/api/v1/nodes", "test-secret", api.RegisterNodeRequest{
+		Node: api.Node{ID: "peer-kick-1", Name: "n1"},
+	})
+	reg.Body.Close()
+	if reg.StatusCode != http.StatusOK {
+		t.Fatalf("register: got %d", reg.StatusCode)
+	}
+
+	res := postJSON(t, ts, http.MethodDelete, "/api/v1/admin/peer/peer-kick-1", "test-secret", nil)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("kick: got %d", res.StatusCode)
+	}
+	var kicked api.KickPeerResponse
+	if err := json.NewDecoder(res.Body).Decode(&kicked); err != nil {
+		t.Fatal(err)
+	}
+	if kicked.NodeID != "peer-kick-1" {
+		t.Fatalf("kicked %+v", kicked)
+	}
+
+	s.lock.Lock()
+	_, still := s.nodes["peer-kick-1"]
+	s.lock.Unlock()
+	if still {
+		t.Fatal("node still registered")
+	}
+	if s.acl.Has("peer-kick-1") {
+		t.Fatal("node still on ACL")
+	}
+	var rec meshNodeRecord
+	if err := s.kv.Get(meshNodeKVKey("default", "peer-kick-1"), &rec); !errors.Is(err, jsonkv.ErrNotFound) {
+		t.Fatalf("kv record still stored: %v", err)
+	}
+}
+
+func TestAdminKickPeerNotFound(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	res := postJSON(t, ts, http.MethodDelete, "/api/v1/admin/peer/missing", "test-secret", nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("kick missing: got %d want 404", res.StatusCode)
+	}
+}
+
+func TestAdminKickPeerRequiresAdmin(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	res := postJSON(t, ts, http.MethodDelete, "/api/v1/admin/peer/peer-1", "", nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated kick: got %d want 401", res.StatusCode)
+	}
+}
+
+func TestAdminListNodes(t *testing.T) {
+	s, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", Name: "guest"})
+	if _, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-list-1", Name: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.kv.Put(meshNodeKVKey("other", "peer-other"), meshNodeRecord{
+		NodeID:    "peer-other",
+		Name:      "beta",
+		AddedAt:   time.Now().UTC(),
+		InvitedAs: "other-guest",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res := postJSON(t, ts, http.MethodGet, "/api/v1/admin/nodes", "test-secret", nil)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("list nodes: got %d", res.StatusCode)
+	}
+	var listed api.ListAdminNodesResponse
+	if err := json.NewDecoder(res.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Nodes) != 2 {
+		t.Fatalf("listed %d, want 2: %+v", len(listed.Nodes), listed.Nodes)
+	}
+	byID := map[string]api.AdminNode{}
+	for _, n := range listed.Nodes {
+		byID[n.ID] = n
+	}
+	a := byID["peer-list-1"]
+	if a.Name != "alpha" || a.MeshId != "default" || a.InvitedAs != "guest" || a.AddedAt.IsZero() {
+		t.Fatalf("default node %+v", a)
+	}
+	b := byID["peer-other"]
+	if b.Name != "beta" || b.MeshId != "other" || b.InvitedAs != "other-guest" {
+		t.Fatalf("other mesh node %+v", b)
+	}
+}
+
+func TestAdminDeleteNodeAllMeshes(t *testing.T) {
+	s, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1", Name: "guest"})
+	if _, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-del-1", Name: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.kv.Put(meshNodeKVKey("other", "peer-del-1"), meshNodeRecord{
+		NodeID:    "peer-del-1",
+		Name:      "n1-other",
+		AddedAt:   time.Now().UTC(),
+		InvitedAs: "guest",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := postJSON(t, ts, http.MethodPost, "/api/v1/nodes", "test-secret", api.RegisterNodeRequest{
+		Node: api.Node{ID: "peer-del-1", Name: "n1"},
+	})
+	reg.Body.Close()
+	if reg.StatusCode != http.StatusOK {
+		t.Fatalf("register: got %d", reg.StatusCode)
+	}
+
+	res := postJSON(t, ts, http.MethodDelete, "/api/v1/admin/nodes/peer-del-1", "test-secret", nil)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete: got %d", res.StatusCode)
+	}
+	var deleted api.DeleteNodeResponse
+	if err := json.NewDecoder(res.Body).Decode(&deleted); err != nil {
+		t.Fatal(err)
+	}
+	if deleted.NodeID != "peer-del-1" {
+		t.Fatalf("deleted %+v", deleted)
+	}
+
+	var rec meshNodeRecord
+	if err := s.kv.Get(meshNodeKVKey("default", "peer-del-1"), &rec); !errors.Is(err, jsonkv.ErrNotFound) {
+		t.Fatalf("default mesh record still stored: %v", err)
+	}
+	if err := s.kv.Get(meshNodeKVKey("other", "peer-del-1"), &rec); !errors.Is(err, jsonkv.ErrNotFound) {
+		t.Fatalf("other mesh record still stored: %v", err)
+	}
+	if s.acl.Has("peer-del-1") {
+		t.Fatal("node still on ACL")
+	}
+	s.lock.Lock()
+	_, still := s.nodes["peer-del-1"]
+	s.lock.Unlock()
+	if still {
+		t.Fatal("node still registered")
+	}
+}
+
+func TestAdminDeleteNodeNotFound(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	res := postJSON(t, ts, http.MethodDelete, "/api/v1/admin/nodes/missing", "test-secret", nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("delete missing: got %d want 404", res.StatusCode)
+	}
+}
+
+func TestAdminDeleteNodeRequiresAuth(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	res := postJSON(t, ts, http.MethodDelete, "/api/v1/admin/nodes/peer-1", "", nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated delete: got %d want 401", res.StatusCode)
+	}
+}
+
+func TestAdminDeleteNodeClient(t *testing.T) {
+	s, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
+	if _, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-del-client", Name: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.NewClient(ts.URL, "test-secret").Admin().DeleteNode("peer-del-client"); err != nil {
+		t.Fatal(err)
+	}
+	var rec meshNodeRecord
+	if err := s.kv.Get(meshNodeKVKey("default", "peer-del-client"), &rec); !errors.Is(err, jsonkv.ErrNotFound) {
+		t.Fatalf("record still stored: %v", err)
+	}
+	if s.acl.Has("peer-del-client") {
+		t.Fatal("still on ACL")
+	}
+}
+
+func TestAdminListNodesEmpty(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	res := postJSON(t, ts, http.MethodGet, "/api/v1/admin/nodes", "test-secret", nil)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("empty list: got %d", res.StatusCode)
+	}
+	var listed api.ListAdminNodesResponse
+	if err := json.NewDecoder(res.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if listed.Nodes == nil || len(listed.Nodes) != 0 {
+		t.Fatalf("want empty slice, got %+v", listed.Nodes)
+	}
+}
+
+func TestAdminListNodesRequiresAuth(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	res := postJSON(t, ts, http.MethodGet, "/api/v1/admin/nodes", "", nil)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated list: got %d want 401", res.StatusCode)
+	}
+}
+
+func TestAdminListNodesClient(t *testing.T) {
+	_, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
+	if _, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-list-client", Name: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := api.NewClient(ts.URL, "test-secret").Admin().ListNodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Nodes) != 1 || listed.Nodes[0].ID != "peer-list-client" || listed.Nodes[0].MeshId != "default" {
+		t.Fatalf("listed %+v", listed.Nodes)
+	}
+}
+
+func TestAdminKickPeerClient(t *testing.T) {
+	s, ts := newAdminTestServer(t)
+	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})
+	if _, err := api.RedeemInvite(ts.URL+"/api/v1/redeem/"+created.InviteId, api.Node{ID: "peer-kick-client", Name: "n1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	client := api.NewClient(ts.URL, "test-secret")
+	if err := client.Admin().KickPeer("peer-kick-client"); err != nil {
+		t.Fatal(err)
+	}
+	if s.acl.Has("peer-kick-client") {
+		t.Fatal("still on ACL")
+	}
+}
+
 func TestAdminDeleteInviteLink(t *testing.T) {
 	s, ts := newAdminTestServer(t)
 	created := createInvite(t, ts, api.CreateInviteRequest{MeshId: "mesh-1"})

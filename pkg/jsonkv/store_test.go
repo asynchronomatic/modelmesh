@@ -1,6 +1,7 @@
 package jsonkv
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -46,6 +47,40 @@ func TestPutGetDelete(t *testing.T) {
 	}
 	if err := s.Get("item", &out); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get after Delete: %v, want ErrNotFound", err)
+	}
+}
+
+func TestForEachPrefix(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "foreach.jkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if err := s.Put("/invites/default/a", sample{Name: "a", Count: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put("/invites/default/b", sample{Name: "b", Count: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put("/other/c", sample{Name: "c", Count: 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]sample{}
+	err = s.ForEach("/invites/default/", func(key string, data []byte) error {
+		var v sample
+		if err := json.Unmarshal(data, &v); err != nil {
+			return err
+		}
+		got[key] = v
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["/invites/default/a"].Name != "a" || got["/invites/default/b"].Count != 2 {
+		t.Fatalf("got %+v", got)
 	}
 }
 
