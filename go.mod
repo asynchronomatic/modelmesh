@@ -1,4 +1,4 @@
-module modelmesh
+module github.com/asynchronomatic/speakeasy
 
 go 1.27
 

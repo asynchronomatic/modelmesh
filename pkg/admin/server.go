@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"modelmesh/pkg/admin/auth"
-	"modelmesh/pkg/admin/magiclink"
-	"modelmesh/pkg/jsonkv"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/admin/auth"
+	"github.com/asynchronomatic/speakeasy/pkg/admin/magiclink"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonkv"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 
-	"modelmesh/api"
+	"github.com/asynchronomatic/speakeasy/api"
 )
 
 var BuildVersion string

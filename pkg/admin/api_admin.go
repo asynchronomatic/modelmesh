@@ -14,8 +14,8 @@ import (
 	"github.com/negrel/assert"
 	"golang.org/x/crypto/bcrypt"
 
-	"modelmesh/api"
-	"modelmesh/pkg/jsonkv"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonkv"
 )
 
 type inviteSecret struct {

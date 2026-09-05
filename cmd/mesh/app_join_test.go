@@ -11,8 +11,8 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"modelmesh/api"
-	"modelmesh/pkg/core"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
 )
 
 func TestConfigFromInvite(t *testing.T) {

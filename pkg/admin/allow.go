@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 type AllowList struct {

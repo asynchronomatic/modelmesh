@@ -1,7 +1,7 @@
 package api
 
 import (
-	"modelmesh/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
 )
 
 type Error = jsonclient.RequestError

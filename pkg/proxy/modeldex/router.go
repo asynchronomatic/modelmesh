@@ -10,9 +10,9 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/jsonclient"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 
 	"github.com/ollama/ollama/api"
 )

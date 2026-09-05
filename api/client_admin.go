@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"modelmesh/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
 )
 
 type AdminClient struct {

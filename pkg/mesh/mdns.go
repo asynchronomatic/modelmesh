@@ -8,7 +8,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 // If your nodes are on the same local network, they shouldn't have to use the public relay to discover each other

@@ -23,12 +23,12 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
 	ma "github.com/multiformats/go-multiaddr"
 
-	"modelmesh/pkg/jsonclient"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 
-	"modelmesh/api"
-	"modelmesh/pkg/autoip"
-	"modelmesh/pkg/core"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/autoip"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
 )
 
 func init() {

@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
-	"modelmesh/pkg/autoip"
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/autoip"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 func discoverPublicAddress(config *core.Config) string {

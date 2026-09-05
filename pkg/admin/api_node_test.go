@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"modelmesh/api"
-	"modelmesh/pkg/admin/auth"
-	"modelmesh/pkg/admin/magiclink"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/admin/auth"
+	"github.com/asynchronomatic/speakeasy/pkg/admin/magiclink"
 )
 
 func TestApiNodeLogin(t *testing.T) {

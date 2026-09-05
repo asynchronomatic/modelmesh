@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 
-	"modelmesh/pkg/admin"
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/mesh"
+	"github.com/asynchronomatic/speakeasy/pkg/admin"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/mesh"
 )
 
 func runAdminAndRelay(config *core.Config) error {

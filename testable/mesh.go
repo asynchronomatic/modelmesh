@@ -3,8 +3,8 @@ package testable
 import (
 	"net/http"
 
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
 )
 
 type MeshNode struct {

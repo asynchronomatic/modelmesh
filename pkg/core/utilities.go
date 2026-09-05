@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"sync"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 type Service interface {

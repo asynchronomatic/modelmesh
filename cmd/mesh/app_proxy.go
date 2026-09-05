@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/log"
-	"modelmesh/pkg/mesh"
-	"modelmesh/pkg/proxy"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/mesh"
+	"github.com/asynchronomatic/speakeasy/pkg/proxy"
 )
 
 func runProxy(config *core.Config) error {

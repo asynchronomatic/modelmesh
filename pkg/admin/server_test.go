@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"modelmesh/api"
-	"modelmesh/pkg/jsonkv"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonkv"
 )
 
 func testNewServer(t *testing.T, addr, secret string) *Server {

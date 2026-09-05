@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"modelmesh/api"
-	"modelmesh/pkg/admin/auth"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/admin/auth"
 )
 
 type JsonRPC struct {

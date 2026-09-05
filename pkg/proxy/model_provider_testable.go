@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"modelmesh/pkg/proxy/modeldex"
+	"github.com/asynchronomatic/speakeasy/pkg/proxy/modeldex"
 )
 
 type TestableModelProvider struct {

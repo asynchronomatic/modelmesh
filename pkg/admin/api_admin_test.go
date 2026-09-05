@@ -17,8 +17,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"modelmesh/api"
-	"modelmesh/pkg/jsonkv"
+	"github.com/asynchronomatic/speakeasy/api"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonkv"
 )
 
 func newAdminTestServer(t *testing.T) (*Server, *httptest.Server) {

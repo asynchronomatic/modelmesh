@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"sync"
 
-	"modelmesh/pkg/core"
-	"modelmesh/pkg/jsonclient"
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/core"
+	"github.com/asynchronomatic/speakeasy/pkg/jsonclient"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 // MeshOrchestrator implements the "notion of the p2p network"  it creates a fake P2P network that satisfies the interfaces

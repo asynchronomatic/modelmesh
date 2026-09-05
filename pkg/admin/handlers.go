@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 func notFoundHandler(w http.ResponseWriter, r *http.Request) {

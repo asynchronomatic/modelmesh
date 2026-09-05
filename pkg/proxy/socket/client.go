@@ -5,7 +5,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"modelmesh/pkg/log"
+	"github.com/asynchronomatic/speakeasy/pkg/log"
 )
 
 type Client struct {
