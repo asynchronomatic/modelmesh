@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRedeemInvite(t *testing.T) {
@@ -20,9 +22,9 @@ func TestRedeemInvite(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(RedeemInviteResponse{
-			MeshId:      "default",
-			MeshSecret:  "secret",
-			MeshServers: []string{"/ip4/1.2.3.4/tcp/4001"},
+			MeshId:     "default",
+			MeshSecret: "secret",
+			MeshServer: "https://mesh.example:4002",
 		})
 	}))
 	t.Cleanup(ts.Close)
@@ -41,9 +43,7 @@ func TestRedeemInvite(t *testing.T) {
 	if resp.MeshId != "default" || resp.MeshSecret != "secret" {
 		t.Fatalf("response %+v", resp)
 	}
-	if len(resp.MeshServers) != 1 {
-		t.Fatalf("MeshServers %v", resp.MeshServers)
-	}
+	assert.Equal(t, "https://mesh.example:4002", resp.MeshServer)
 }
 
 func TestRedeemInviteRequiresNodeID(t *testing.T) {

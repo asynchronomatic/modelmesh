@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/negrel/assert"
+	"golang.org/x/crypto/bcrypt"
 
 	"modelmesh/api"
 	"modelmesh/pkg/jsonkv"
@@ -50,10 +52,27 @@ func inviteKVKey(meshID, inviteID string) string {
 }
 
 type meshNodeRecord struct {
-	NodeID    string
-	Name      string
-	AddedAt   time.Time
-	InvitedAs string
+	NodeID       string
+	Name         string
+	AddedAt      time.Time
+	InvitedAs    string
+	PasswordHash string
+}
+
+func newNodeLoginSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func hashLoginSecret(secret string) (string, error) {
+	h, err := bcrypt.GenerateFromPassword([]byte(secret), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(h), nil
 }
 
 func meshNodeKVKey(meshID, nodeID string) string {
@@ -99,7 +118,7 @@ func (s *Server) adminCreateInviteLink(ctx *JsonRPC) error {
 		return err
 	}
 
-	base := strings.TrimRight(s.baseUrl, "/")
+	base := strings.TrimRight(s.advertiseURL, "/")
 	resp := api.CreateInviteResponse{
 		InviteId:   inviteID,
 		InviteLink: fmt.Sprintf("%s/redeem/%s", base, inviteID),
@@ -141,11 +160,21 @@ func (s *Server) adminRedeemInviteLink(ctx *JsonRPC) error {
 
 	s.acl.Add(req.Node.ID)
 
+	secret, err := newNodeLoginSecret()
+	if err != nil {
+		return err
+	}
+	hash, err := hashLoginSecret(secret)
+	if err != nil {
+		return err
+	}
+
 	if err := s.kv.Put(meshNodeKVKey(invite.MeshId, req.Node.ID), meshNodeRecord{
-		NodeID:    req.Node.ID,
-		Name:      req.Node.Name,
-		AddedAt:   time.Now().UTC(),
-		InvitedAs: invite.InviteAs,
+		NodeID:       req.Node.ID,
+		Name:         req.Node.Name,
+		AddedAt:      time.Now().UTC(),
+		InvitedAs:    invite.InviteAs,
+		PasswordHash: hash,
 	}); err != nil {
 		return err
 	}
@@ -157,9 +186,9 @@ func (s *Server) adminRedeemInviteLink(ctx *JsonRPC) error {
 	}
 
 	resp := api.RedeemInviteResponse{
-		MeshId:      invite.MeshId,
-		MeshSecret:  s.adminKey,
-		MeshServers: append([]string(nil), s.relayAddress...),
+		MeshId:     invite.MeshId,
+		MeshSecret: secret,
+		MeshServer: s.advertiseURL,
 	}
 	return ctx.ReplyObject(&resp)
 }

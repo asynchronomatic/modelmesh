@@ -374,7 +374,7 @@ func (m *Service) Disconnect() error {
 }
 
 func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, error) {
-	mesh, err := api.NewClient(mc.AdminAddress, mc.AdminKey).Mesh("default")
+	mesh, err := api.NewClient(mc.Address, mc.Secret).Mesh("default")
 	if err != nil {
 		return nil, fmt.Errorf("could open mesh admin client. err:%v\n", err)
 	}
@@ -401,7 +401,7 @@ func NewService(mc *core.MeshConfig, gater connmgr.ConnectionGater) (*Service, e
 		libp2p.Identity(key),
 		libp2p.ListenAddrStrings(
 			// Note: App side does not need a specific port ( this can be set in config to 0 )
-			fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", mc.AppPort),
+			fmt.Sprintf("/ip4/0.0.0.0/udp/%d/quic-v1", mc.Port),
 			//fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", mc.AppPort),
 			"/p2p-circuit",
 		),

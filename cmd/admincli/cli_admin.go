@@ -106,8 +106,7 @@ func redeemInvite(_ context.Context, cmd *cli.Command) error {
 	}
 	fmt.Fprintf(out(), "mesh id:     %s\n", resp.MeshId)
 	fmt.Fprintf(out(), "mesh secret: %s\n", resp.MeshSecret)
-	for _, s := range resp.MeshServers {
-		fmt.Fprintf(out(), "server:      %s\n", s)
-	}
+	fmt.Fprintf(out(), "server:      %s\n", resp.MeshServer)
+
 	return nil
 }

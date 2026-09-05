@@ -25,14 +25,15 @@ func runAdminAndRelay(config *core.Config) error {
 	}
 
 	// Init a new admin server... the admin server controls who gets access to our mesh, only nodes with the AdminKey can gain access
-	adminSvc, err := admin.NewServer(fmt.Sprintf(":%d", config.Mesh.AdminPort), config.Mesh.AdminKey)
+	adminSvc, err := admin.NewServer(fmt.Sprintf(":%d", config.Admin.AdminPort), config.Admin.Secret)
 	if err != nil {
 		log.Fatalf("Could not initialize relay service. Err:%v\n", err)
 	}
+	adminSvc.WithAdvertiseURL(config.Admin.Address)
 
 	// Initialize a Relay node, this node does not service any application traffic
 	//  we gate access using the admin service AllowList as the gatekeeper
-	relaySvc, err := mesh.NewRelay(key, []string{discoveredPublicAddress}, mesh.NewGateKeeper(adminSvc.GetAllowList()), config.Mesh.RelayPort)
+	relaySvc, err := mesh.NewRelay(key, []string{discoveredPublicAddress}, mesh.NewGateKeeper(adminSvc.GetAllowList()), config.Admin.RelayPort)
 	if err != nil {
 		log.Fatalf("Could not initialize relay service. Err:%v\n", err)
 	}

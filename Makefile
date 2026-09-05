@@ -13,7 +13,7 @@ build-all:
 .PHONY: build-all
 
 run-admin:
-	export ADMIN_DB_PATH="tests/admin.kjv"
+	export ADMIN_DB_PATH="tests/admin.jkv"
 	ADMIN_DB_PATH="tests/admin.kjv" go run modelmesh/cmd/mesh admin
 .PHONY: run-admin
 

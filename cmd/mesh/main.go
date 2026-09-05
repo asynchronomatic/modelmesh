@@ -32,7 +32,7 @@ func discoverPublicAddress(config *core.Config) string {
 			publicAddress = dc.Public
 			fmt.Printf("Warning: We discovered a public address of %s but this does not match any of the machine addresses\n", dc.Public)
 			fmt.Printf("  For mesh proxies to ber able to communicate you must port forward %d(tcp),%d(tcp+udp) top %s\n",
-				config.Mesh.AdminPort, config.Mesh.AppPort, dc.Outbound)
+				config.Admin.AdminPort, config.Admin.RelayPort, dc.Outbound)
 		}
 	}
 
@@ -41,8 +41,8 @@ func discoverPublicAddress(config *core.Config) string {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage:", os.Args[0], "init | join | proxy | admin | hybrid(proxy+admin)")
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage:", os.Args[0], "init | join <invite-url> | proxy | admin | hybrid(proxy+admin)")
 		os.Exit(1)
 	}
 
@@ -55,7 +55,7 @@ func main() {
 	}
 
 	if cmd == "join" {
-		if err := runJoin(); err != nil {
+		if err := runJoin(os.Args[2:]); err != nil {
 			log.Fatalf("Error running mesh: %v\n", err)
 		}
 		return
@@ -75,7 +75,7 @@ func main() {
 		err = runHybrid(config)
 
 	default:
-		fmt.Fprintln(os.Stderr, "usage:", os.Args[0], "init | join | proxy | admin | hybrid(proxy+admin)")
+		fmt.Fprintln(os.Stderr, "usage:", os.Args[0], "init | join <invite-url> | proxy | admin | hybrid(proxy+admin)")
 		os.Exit(1)
 	}
 

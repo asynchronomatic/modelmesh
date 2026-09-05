@@ -172,3 +172,7 @@ func (s *Server) apiRelayGet(ctx *JsonRPC) error {
 
 	return ctx.ReplyObject(&resp)
 }
+
+func (s *Server) apiNodeLogin(ctx *JsonRPC) error {
+
+}

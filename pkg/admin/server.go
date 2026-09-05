@@ -41,8 +41,9 @@ type Server struct {
 
 	auth auth.Provider
 
-	baseUrl  string
-	magicKey magiclink.EncryptionKey
+	//baseUrl  string
+	advertiseURL string
+	magicKey     magiclink.EncryptionKey
 }
 
 func OutboundIP() (string, error) {
@@ -113,6 +114,8 @@ func (s *Server) authenticated(fn func(*JsonRPC) error) http.HandlerFunc {
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/login", s.authenticated(s.apiNodeLogin))
+
 	mux.HandleFunc("GET /api/v1/relay", s.authenticated(s.apiRelayGet))
 	mux.HandleFunc("POST /api/v1/authorize", s.authenticated(s.apiNodeAuthorize))
 	mux.HandleFunc("POST /api/v1/nodes", s.authenticated(s.apiNodeRegister))
@@ -216,19 +219,16 @@ func (s *Server) Wait(ctx context.Context) error {
 	}
 }
 
-func (s *Server) WithBaseUrl(baseUrl string) {
-	s.baseUrl = baseUrl
-}
-
-func (s *Server) GetBaseUrl() string {
-	return s.baseUrl
-}
-
 func adminDBPath() string {
 	if p := strings.TrimSpace(os.Getenv("ADMIN_DB_PATH")); p != "" {
 		return p
 	}
 	return "admin.jkv"
+}
+
+func (s *Server) WithAdvertiseURL(url string) *Server {
+	s.advertiseURL = url
+	return s
 }
 
 func NewServer(listenAddress, adminKey string) (*Server, error) {

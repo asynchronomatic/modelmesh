@@ -63,7 +63,7 @@ type RedeemInviteRequest struct {
 }
 
 type RedeemInviteResponse struct {
-	MeshId      string // the Mesh Id to set
-	MeshSecret  string // the mesh secret to set
-	MeshServers []string
+	MeshId     string // the Mesh Id to set
+	MeshSecret string // the mesh secret to set
+	MeshServer string // the mesh server
 }

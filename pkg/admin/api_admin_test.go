@@ -13,6 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
+	"golang.org/x/crypto/bcrypt"
+
 	"modelmesh/api"
 	"modelmesh/pkg/jsonkv"
 )
@@ -25,7 +29,7 @@ func newAdminTestServer(t *testing.T) (*Server, *httptest.Server) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	s.WithBaseUrl("https://mesh.example:4002")
+	s.WithAdvertiseURL("https://mesh.example:4002")
 	s.WithRelayAddresses([]string{"/ip4/1.2.3.4/tcp/4001/p2p/relay"})
 	ts := httptest.NewServer(s.routes())
 	t.Cleanup(ts.Close)
@@ -157,12 +161,11 @@ func TestAdminRedeemInviteLink(t *testing.T) {
 	if resp.MeshId != "default" {
 		t.Fatalf("MeshId=%q", resp.MeshId)
 	}
-	if resp.MeshSecret != "test-secret" {
+	if resp.MeshSecret == "" || resp.MeshSecret == "test-secret" {
 		t.Fatalf("MeshSecret=%q", resp.MeshSecret)
 	}
-	if len(resp.MeshServers) != 1 || resp.MeshServers[0] != "/ip4/1.2.3.4/tcp/4001/p2p/relay" {
-		t.Fatalf("MeshServers=%v", resp.MeshServers)
-	}
+	assert.Equal(t, "https://mesh.example:4002", resp.MeshServer)
+
 	if !s.acl.Has("peer-redeem-1") {
 		t.Fatal("expected node to be authorized")
 	}
@@ -176,6 +179,12 @@ func TestAdminRedeemInviteLink(t *testing.T) {
 	}
 	if rec.AddedAt.IsZero() {
 		t.Fatal("expected AddedAt")
+	}
+	if rec.PasswordHash == "" || rec.PasswordHash == resp.MeshSecret {
+		t.Fatalf("expected hashed password, got %q", rec.PasswordHash)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(rec.PasswordHash), []byte(resp.MeshSecret)); err != nil {
+		t.Fatalf("password hash does not match returned secret: %v", err)
 	}
 
 	res = postJSON(t, ts, http.MethodPost, "/redeem/"+created.InviteId, "", api.RedeemInviteRequest{
@@ -207,6 +216,9 @@ func TestAdminRedeemOneTimeInvite(t *testing.T) {
 	}
 	if rec.NodeID != "peer-once-1" || rec.Name != "n1" || rec.InvitedAs != "" {
 		t.Fatalf("stored node %+v", rec)
+	}
+	if rec.PasswordHash == "" {
+		t.Fatal("expected password hash")
 	}
 
 	var stored inviteSecret
@@ -274,8 +286,15 @@ func TestRedeemInviteClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.MeshId != "default" || resp.MeshSecret != "test-secret" {
+	if resp.MeshId != "default" || resp.MeshSecret == "" || resp.MeshSecret == "test-secret" {
 		t.Fatalf("response %+v", resp)
+	}
+	var rec meshNodeRecord
+	if err := s.kv.Get(meshNodeKVKey("default", "peer-client-1"), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(rec.PasswordHash), []byte(resp.MeshSecret)); err != nil {
+		t.Fatalf("client redeem hash mismatch: %v", err)
 	}
 	if !s.acl.Has("peer-client-1") {
 		t.Fatal("expected node to be authorized")

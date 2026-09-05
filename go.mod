@@ -15,6 +15,7 @@ require (
 	github.com/sethvargo/go-retry v0.4.0
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v3 v3.11.0
+	golang.org/x/crypto v0.54.0
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef
 )
 
@@ -128,7 +129,6 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
